@@ -18,6 +18,17 @@ class Maze:
             self.graph.add_edge(node1, node2)
     
     def surround_with_walls(self, node):
-        node_edges = self.graph.edges(node)
+        node_edges = list(self.graph.edges(node))
         for edge in node_edges:
             self.graph.remove_edge(*edge)
+    
+    def display(self):
+        for x in range(31):
+            for y in range(28):
+                cell = "|_"
+                if self.graph.has_edge((x, y), (x, y-1)):
+                    cell = cell.replace("|", " ")
+                if self.graph.has_edge((x, y), (x+1, y)):
+                    cell = cell.replace("_", " ")
+                print(cell, end="")
+            print("|")
