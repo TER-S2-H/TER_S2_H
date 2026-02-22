@@ -38,6 +38,7 @@ class Shape(ABC):
                     self.maze.graph.remove_edge(node, neighbor)
 
             self.maze.close_surrounding_cells(node)
+            self.maze.add_wall(node)
 
 class central_block(Shape):
     def define_nodes(self):
@@ -50,7 +51,7 @@ class central_block(Shape):
     def satisfies_constraints(self):
         return self.is_available()
 
-# Two cell horizontal wall
+# Three cells horizontal wall
 class WallSH(Shape):
     def define_nodes(self):
         x, y = self.init_node
@@ -60,12 +61,32 @@ class WallSH(Shape):
     def satisfies_constraints(self):
         return self.is_available()
     
-# Two cell vertical wall
+# Three cells vertical wall
 class WallSV(Shape):
     def define_nodes(self):
         x, y = self.init_node
         self.nodes.append((x + 1, y))
         self.nodes.append((x + 2, y))
+    
+    def satisfies_constraints(self):
+        return self.is_available()
+    
+# Four cells horizontal wall
+class WallLH(Shape):
+    def define_nodes(self):
+        x, y = self.init_node
+        for i in range(1, 4):
+            self.nodes.append((x, y + i))
+    
+    def satisfies_constraints(self):
+        return self.is_available()
+
+# Four cells vertical wall
+class WallLV(Shape):
+    def define_nodes(self):
+        x, y = self.init_node
+        for i in range(1, 4):
+            self.nodes.append((x + i, y))
     
     def satisfies_constraints(self):
         return self.is_available()

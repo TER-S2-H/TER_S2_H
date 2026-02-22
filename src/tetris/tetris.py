@@ -29,8 +29,8 @@ def build_tetris_maze(maze):
 
     clear_central_block(maze)
 
-    for x in range(1, 30):
-        for y in range(1, 27):
+    for x in range(31):
+        for y in range(28):
             if maze.is_cell_free((x, y)):
                 shape = create_random_shape(maze, (x, y))
                 if shape:

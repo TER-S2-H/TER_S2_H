@@ -1,4 +1,5 @@
 import networkx as nx
+from rich import print
 
 class Maze:
     def __init__(self):
@@ -6,14 +7,18 @@ class Maze:
 
         for node in self.graph.nodes:
             self.graph.nodes[node]["free"] = True
+            self.graph.nodes[node]["wall"] = False
 
-    def add_wall(self, node1, node2):
-        if self.graph.has_edge(node1, node2):
-            self.graph.remove_edge(node1, node2)
+    def add_wall(self, node):
+        self.graph.nodes[node]["wall"] = True
 
-    def remove_wall(self, node1, node2):
-        if not self.graph.has_edge(node1, node2):
-            self.graph.add_edge(node1, node2)
+    def remove_wall(self, node):
+        self.graph.nodes[node]["wall"] = False
+    
+    def is_wall(self, node):
+        if node not in self.graph.nodes:
+            return False
+        return self.graph.nodes[node]["wall"]
 
     def add_walls(self, node1, orientation, length):
         for i in range(length):
@@ -57,12 +62,11 @@ class Maze:
         
     
     def display(self):
-        for x in range(31):
-            for y in range(28):
-                cell = "|_"
-                if self.graph.has_edge((x, y), (x, y-1)):
-                    cell = cell.replace("|", " ")
-                if self.graph.has_edge((x, y), (x+1, y)):
-                    cell = cell.replace("_", " ")
-                print(cell, end="")
-            print("|")
+        for x in range(-1, 32):
+            for y in range(-1, 29):
+                if self.is_wall((x, y)) or x == -1 or x == 31 or y == -1 or y == 28:
+                    print("[cyan]█[/cyan]", end="")
+
+                else:
+                    print("[black]█[/black]", end="")
+            print()
