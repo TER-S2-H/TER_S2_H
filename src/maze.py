@@ -25,12 +25,16 @@ class Maze:
                 self.add_wall((node1[0], node1[1] + i), (node1[0] + 1, node1[1] + i))
 
     def close_cell(self, node):
-        self.graph.nodes[node]["free"] = False
+        if node in self.graph.nodes:
+            self.graph.nodes[node]["free"] = False
     
     def open_cell(self, node):
-        self.graph.nodes[node]["free"] = True
+        if node in self.graph.nodes:
+            self.graph.nodes[node]["free"] = True
 
     def is_cell_free(self, node):
+        if node not in self.graph.nodes:
+            return False
         return self.graph.nodes[node]["free"]
 
     def create_block(self, node1, node2):
