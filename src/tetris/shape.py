@@ -30,13 +30,6 @@ class Shape(ABC):
     def satisfies_constraints(self):
         pass
 
-    # Mark the cells occupied by the shape as walls in the maze and clear pathways around it
-    def close_surrounding_cells(self, node):
-        self.maze.close_cell(node)
-        self.maze.close_cell((node[0], node[1] + 1))
-        self.maze.close_cell((node[0] + 1, node[1]))
-        self.maze.close_cell((node[0] + 1, node[1] + 1))
-
     # Remove edges between the shape's nodes and their neighbors to integrate the shape into the maze structure
     def place_shape(self):
         for node in self.nodes:
@@ -44,10 +37,18 @@ class Shape(ABC):
                 if neighbor not in self.nodes:
                     self.maze.graph.remove_edge(node, neighbor)
 
-            self.close_surrounding_cells(node)
+            self.maze.close_surrounding_cells(node)
 
-
-
+class central_block(Shape):
+    def define_nodes(self):
+        x, y = self.init_node
+        for xi in range(3):
+            for yi in range(6):
+                if xi != 0 or yi != 0:
+                    self.nodes.append((x + xi, y + yi))
+    
+    def satisfies_constraints(self):
+        return self.is_available()
 
 # Two cell horizontal wall
 class WallSH(Shape):
@@ -56,7 +57,7 @@ class WallSH(Shape):
         self.nodes.append((x, y + 1))
         self.nodes.append((x, y + 2))
     
-    def satisfies_constraints(self, maze):
+    def satisfies_constraints(self):
         return self.is_available()
     
 # Two cell vertical wall
@@ -66,5 +67,5 @@ class WallSV(Shape):
         self.nodes.append((x + 1, y))
         self.nodes.append((x + 2, y))
     
-    def satisfies_constraints(self, maze):
+    def satisfies_constraints(self):
         return self.is_available()

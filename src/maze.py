@@ -7,8 +7,6 @@ class Maze:
         for node in self.graph.nodes:
             self.graph.nodes[node]["free"] = True
 
-        self.create_block((14, 12), (16, 15))
-
     def add_wall(self, node1, node2):
         if self.graph.has_edge(node1, node2):
             self.graph.remove_edge(node1, node2)
@@ -36,6 +34,12 @@ class Maze:
         if node not in self.graph.nodes:
             return False
         return self.graph.nodes[node]["free"]
+    
+    def close_surrounding_cells(self, node):
+        self.close_cell(node)
+        self.close_cell((node[0], node[1] + 1))
+        self.close_cell((node[0] + 1, node[1]))
+        self.close_cell((node[0] + 1, node[1] + 1))
 
     def create_block(self, node1, node2):
         for x in range(node1[0], node2[0] + 1):
@@ -46,9 +50,9 @@ class Maze:
             self.add_wall((node1[0], y), (node1[0]-1, y))
             self.add_wall((node2[0], y), (node2[0]+1, y))
 
-        for x in range(node1[0] - 1, node2[0] + 1):
-            for y in range(node1[1] - 1, node2[1] + 1):
-                self.close_cell((x, y))
+        for x in range(node1[0], node2[0] + 1):
+            for y in range(node1[1], node2[1] + 1):
+                self.close_surrounding_cells((x, y))
 
         
     

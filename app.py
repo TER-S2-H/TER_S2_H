@@ -1,10 +1,9 @@
 from src.maze import Maze
-from src.tetris.shape import Shape, WallSH
+import src.tetris.shape as sh
+import src.tetris.tetris as tetris
 import networkx as nx
 
 if __name__ == "__main__":
     maze = Maze()
-    shape = WallSH((5, 5), maze)
-    print(shape.is_available())
-    shape.place_shape()
+    tetris.build_tetris_maze(maze)
     maze.display()
