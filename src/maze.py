@@ -65,7 +65,7 @@ class Maze:
         for x in range(-1, 32):
             for y in range(-1, 29):
                 if self.is_wall((x, y)) or x == -1 or x == 31 or y == -1 or y == 28:
-                    print("[cyan]█[/cyan]", end="")
+                    print("[bright_blue]█[/bright_blue]", end="")
 
                 else:
                     print("[black]█[/black]", end="")
