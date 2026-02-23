@@ -6,8 +6,10 @@ Generates maze in JSON, PNG, and text formats
 
 import argparse
 import sys
-from pacman_map import PacmanMap
-from maze_renderer import MazeRenderer
+import os
+import random
+from src.pacman_map import PacmanMap
+from src.maze_renderer import MazeRenderer
 
 
 def main():
@@ -18,7 +20,7 @@ def main():
     
     parser.add_argument('-o', '--output',
                        default='maze',
-                       help='Output filename prefix (default: maze)')
+                       help='Output folder name (default: maze_[seed])')
     
     parser.add_argument('-s', '--size',
                        type=int,
@@ -47,15 +49,22 @@ def main():
     
     args = parser.parse_args()
     
+    # Use provided seed or generate a random one
+    seed = args.seed if args.seed is not None else random.randint(0, 999999)
+    
     # Generate maze
     if args.verbose:
-        print("Generating maze...")
+        print(f"Generating maze with seed {seed}...")
     
-    maze = PacmanMap(seed=args.seed)
+    maze = PacmanMap(seed=seed)
     maze.generate()
     
     if args.verbose:
         print(f"Generated after {maze.gen_count} attempts")
+    
+    # Create output directory
+    output_dir = f"maze_{seed}" if args.output == 'maze' else args.output
+    os.makedirs(output_dir, exist_ok=True)
     
     # Determine what to generate
     generate_json = args.json_only or not (args.png_only or args.text_only)
@@ -66,14 +75,14 @@ def main():
     
     # Generate JSON
     if generate_json:
-        json_file = f"{args.output}.json"
-        maze.export_to_graph_json(json_file)
+        json_file = os.path.join(output_dir, "maze.json")
+        maze.export_to_graph_json(json_file, tile_map=tile_map)
         if args.verbose:
             print(f"JSON: {json_file}")
     
     # Generate PNG
     if generate_png:
-        png_file = f"{args.output}.png"
+        png_file = os.path.join(output_dir, "maze.png")
         renderer = MazeRenderer(tile_size=args.size)
         renderer.render_to_file(tile_map, png_file)
         if args.verbose:
@@ -81,13 +90,15 @@ def main():
     
     # Generate text
     if generate_text:
-        txt_file = f"{args.output}.txt"
+        txt_file = os.path.join(output_dir, "maze.txt")
         MazeRenderer.render_text_to_file(tile_map, txt_file)
         if args.verbose:
             print(f"Text: {txt_file}")
     
     if not args.verbose:
-        print(f"Maze generated: {args.output}.*")
+        print(f"Maze generated in: {output_dir}/")
+    else:
+        print(f"\nMaze with seed {seed} generated in: {output_dir}/")
     
     return 0
 

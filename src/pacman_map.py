@@ -920,7 +920,7 @@ class PacmanMap:
                 if c.group == old_group:
                     c.group = new_group
     
-    def export_to_graph_json(self, output_file: Optional[str] = None) -> Dict:
+    def export_to_graph_json(self, output_file: Optional[str] = None, tile_map: Optional[List[List]] = None) -> Dict:
         """
         Export maze as a graph representation in JSON format.
         
@@ -932,12 +932,14 @@ class PacmanMap:
         
         Args:
             output_file: Optional file path to save JSON. If None, returns dict.
+            tile_map: Optional tile map to export. If None, generates a new one.
             
         Returns:
             Dictionary containing graph representation
         """
-        # Step 1: Get tile map
-        tile_map = self.get_tile_map()
+        # Step 1: Get tile map (use provided or generate new)
+        if tile_map is None:
+            tile_map = self.get_tile_map()
         height = len(tile_map[0])
         width = len(tile_map)
         
@@ -978,6 +980,7 @@ class PacmanMap:
                     walls.append({"x": x, "y": y})
                 elif state == Tile.GHOSTWALL:
                     ghost_walls.append({"x": x, "y": y})
+
         
         # Step 3: Build edges (adjacency between walkable tiles)
         edges_set: Set[Tuple[str, str]] = set()  # to deduplicate

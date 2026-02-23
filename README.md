@@ -2,6 +2,21 @@
 
 Generate random Pac-Man-style mazes with JSON graph export, PNG visualization, and text rendering.
 
+## Project Structure
+
+```
+.
+├── generate.py          # Main generator script
+├── render_json.py       # Render maze from JSON
+├── src/
+│   ├── pacman_map.py    # Core maze generation logic
+│   └── maze_renderer.py # PNG and text rendering
+└── maze_[seed]/         # Generated maze output folders
+    ├── maze.json        # Graph representation
+    ├── maze.png         # Visual rendering
+    └── maze.txt         # ASCII art
+```
+
 ## Requirements
 
 - Python 3.6 or higher
@@ -18,21 +33,21 @@ pip install Pillow
 Generate a maze with all three output formats (JSON, PNG, and TXT):
 
 ```bash
-python3 generate.py -o output
+python3 generate.py
 ```
 
-This creates:
-- `output.json` - Graph representation with nodes, edges, and walls
-- `output.png` - Visual rendering (560×620 pixels, 20px tiles)
-- `output.txt` - ASCII art representation
+This creates a folder named `maze_[seed]` containing:
+- `maze.json` - Graph representation with nodes, edges, and walls
+- `maze.png` - Visual rendering (560×620 pixels, 20px tiles)
+- `maze.txt` - ASCII art representation
 
 ### Options
 
 ```bash
-python3 generate.py -o <output> [options]
+python3 generate.py [options]
 
 Options:
-  -o, --output PATH     Output file path (without extension)
+  -o, --output PATH     Output folder name (default: maze_[seed])
   -s, --size SIZE       Tile size for PNG in pixels (default: 20)
   --seed SEED           Random seed for reproducible mazes
   --json-only           Generate only JSON file
@@ -44,14 +59,56 @@ Options:
 ### Examples
 
 ```bash
-# Generate with custom tile size
-python3 generate.py -o large_maze -s 30
-
-# Generate only JSON
-python3 generate.py -o maze --json-only
+# Generate maze with random seed
+python3 generate.py
 
 # Generate with specific seed
-python3 generate.py -o maze --seed 42
+python3 generate.py --seed 42
+
+# Generate with custom output folder name
+python3 generate.py -o my_maze
+
+# Generate with larger tiles
+python3 generate.py -s 30
+
+# Generate only JSON
+python3 generate.py --json-only
+```
+
+## Rendering from JSON
+
+To verify the maze structure or create visualizations from existing JSON files, use the JSON renderer:
+
+```bash
+python3 render_json.py <json_file> [options]
+```
+
+This allows you to:
+- Verify that JSON contains complete maze structure
+- Create images from JSON without regenerating the maze
+- Visualize the graph structure with nodes and edges
+
+### Options
+
+```bash
+Options:
+  -o, --output PATH     Output image file (default: [json_name]_render.png)
+  -s, --size SIZE       Tile size in pixels (default: 20)
+  --show-graph          Show nodes and edges on the maze
+  -v, --verbose         Print detailed information
+```
+
+### Examples
+
+```bash
+# Render maze from JSON
+python3 render_json.py maze_42/maze.json
+
+# Render with custom output and larger tiles
+python3 render_json.py maze_42/maze.json -o verification.png -s 30
+
+# Show graph structure (nodes and edges)
+python3 render_json.py maze_42/maze.json --show-graph -v
 ```
 
 ## JSON Format

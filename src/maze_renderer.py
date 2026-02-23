@@ -48,7 +48,7 @@ class MazeRenderer:
         Returns:
             PIL Image containing the rendered maze
         """
-        from pacman_map import Tile
+        from .pacman_map import Tile
         
         if not tile_map or not tile_map[0]:
             raise ValueError("TileMap cannot be empty")
@@ -71,7 +71,7 @@ class MazeRenderer:
     
     def _draw_tile(self, draw: ImageDraw.ImageDraw, tile, x: int, y: int):
         """Draw a single tile"""
-        from pacman_map import Tile
+        from .pacman_map import Tile
         
         if tile.state == Tile.WALL:
             # Draw wall as filled rectangle
@@ -132,7 +132,7 @@ class MazeRenderer:
         Returns:
             String representation using ASCII/Unicode characters
         """
-        from pacman_map import Tile
+        from .pacman_map import Tile
         
         lines = []
         for j in range(len(tile_map[0])):
