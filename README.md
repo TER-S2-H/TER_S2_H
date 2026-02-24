@@ -75,7 +75,6 @@ python3 maze_complexity.py maze_42/maze.json
 ```
 
 Options:
-- `--no-tunnel-wrap` - Disable left-right tunnel wrapping
 - `--swap-iterations N` - Try N random swaps to shorten the greedy route
 - `-v, --verbose` - Detailed output
 
@@ -93,7 +92,6 @@ Options:
 - `--frame-step N` - Steps per frame (default: 5)
 - `--max-frames N` - Maximum number of frames (default: 1000)
 - `--duration MS` - Frame duration in ms (default: 150)
-- `--no-tunnel-wrap` - Disable left-right tunnel wrapping
 - `--swap-iterations N` - Try N random swaps to shorten the greedy route
 - `-v, --verbose` - Detailed output
 
@@ -120,7 +118,7 @@ Options:
 
 ## JSON Format
 
-The maze is exported as a graph structure:
+The maze is exported as a graph structure. 
 
 ```json
 {
