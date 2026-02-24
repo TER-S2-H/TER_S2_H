@@ -3,11 +3,11 @@ import src.tetris.shape as sh
 import networkx as nx
 import random
 
-# Define the outter cells as closed to create a pathway around the maze
+# Define the outter cells as closed to create a pathway around the maze, a pathway going the width of the maze in the middle and a "pathway" going the height of the maze for the symetry
 def clear_static_pathways(maze):
     for x in range(31):
         for y in range(28):
-            if x == 0 or x == 15 or y == 0:
+            if x == 0 or x == 15 or y == 0 or y == 15:
                 maze.close_cell((x, y))
 
 def clear_static_blocks(maze):
@@ -48,9 +48,16 @@ def static_setup(maze):
 def build_tetris_maze(maze):
     static_setup(maze)
 
-    for y in range(28):
+    for y in range(14):
         for x in range(31):
+            y_symetry = 27 - y
+
             if maze.is_cell_free((x, y)):
                 shape = create_random_shape(maze, (x, y))
                 if shape:
                     shape.place_shape()
+            
+            maze.close_cell((x, y_symetry))
+
+            if maze.is_wall((x, y)):
+                maze.add_wall((x, y_symetry))
