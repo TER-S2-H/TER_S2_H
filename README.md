@@ -19,7 +19,7 @@ python3 generate.py
 ```
 
 Output folder `maze_[seed]/` contains:
-- `maze.json` - Graph representation
+- `maze.json` - Graph representation with embedded complexity score
 - `maze.png` - Visual rendering (560x620px, 20px tiles)
 - `maze.txt` - ASCII art
 
@@ -66,16 +66,56 @@ python3 render_json.py maze_42/maze.json -o output.png -s 30
 python3 render_json.py maze_42/maze.json --show-graph
 ```
 
+### Complexity Score
+
+Compute and embed the complexity score in `maze.json` (FoodSearch with food on every path tile, fixed start at (13, 23), greedy nearest with optional swaps):
+
+```bash
+python3 maze_complexity.py maze_42/maze.json
+```
+
+Options:
+- `--no-tunnel-wrap` - Disable left-right tunnel wrapping
+- `--swap-iterations N` - Try N random swaps to shorten the greedy route
+- `-v, --verbose` - Detailed output
+
+### Complexity Visualization
+
+Create an animated GIF of the greedy path:
+
+```bash
+python3 maze_complexity_visualize.py maze_42/maze.json
+```
+
+Options:
+- `-o, --output PATH` - Output GIF file
+- `-s, --size SIZE` - Tile size in pixels (default: 20)
+- `--frame-step N` - Steps per frame (default: 5)
+- `--max-frames N` - Maximum number of frames (default: 1000)
+- `--duration MS` - Frame duration in ms (default: 150)
+- `--no-tunnel-wrap` - Disable left-right tunnel wrapping
+- `--swap-iterations N` - Try N random swaps to shorten the greedy route
+- `-v, --verbose` - Detailed output
+
 ## Project Structure
 
 ```
 .
-├── generate.py          - Main maze generator
-├── render_json.py       - JSON to image renderer
+├── generate.py                   - Main maze generator (wrapper)
+├── maze_complexity.py            - Complexity score (wrapper)
+├── maze_complexity_visualize.py  - Path visualization (wrapper)
+├── render_json.py                - JSON renderer (wrapper)
 ├── src/
-│   ├── pacman_map.py    - Maze generation logic
-│   └── maze_renderer.py - Rendering functions
+│   ├── generate.py                   - Generator implementation
+│   ├── maze_complexity.py            - Complexity score implementation
+│   ├── maze_complexity_visualize.py  - Visualization implementation
+│   ├── render_json.py                - JSON renderer implementation
+│   ├── pacman_map.py                 - Maze generation logic
+│   └── maze_renderer.py              - Rendering functions
 └── maze_[seed]/         - Generated output folders
+  ├── maze.json        - Graph + complexity score
+  ├── maze.png         - Visual rendering
+  └── maze.txt         - ASCII art
 ```
 
 ## JSON Format
@@ -84,8 +124,6 @@ The maze is exported as a graph structure:
 
 ```json
 {
-  "width": 28,
-  "height": 31,
   "nodes": [
     {"id": "1_1", "x": 1, "y": 1, "type": "PATH"}
   ],
@@ -99,10 +137,21 @@ The maze is exported as a graph structure:
     {"x": 12, "y": 14}
   ],
   "metadata": {
+    "width": 28,
+    "height": 31,
     "node_count": 245,
     "edge_count": 312,
-    "wall_count": 423,
-    "ghost_wall_count": 2
+    "complexity_score": {
+      "start": {"x": 13, "y": 23},
+      "food_count": 245,
+      "steps": 1234,
+      "method": "greedy-nearest",
+      "wrap_tunnels": true,
+      "width": 28,
+      "height": 31,
+      "swap_iterations": 0,
+      "swaps_applied": 0
+    }
   }
 }
 ```

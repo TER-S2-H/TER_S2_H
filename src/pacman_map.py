@@ -964,8 +964,8 @@ class PacmanMap:
             for x in range(width):
                 state = tile_map[x][y].state
                 
-                # All walkable tiles become nodes (PATH, PATHBLANK, GHOSTSPACE, ENERGIZER)
-                if state in [Tile.PATH, Tile.PATHBLANK, Tile.GHOSTSPACE, Tile.ENERGIZER]:
+                # Walkable tiles become nodes (exclude ghost house)
+                if state in [Tile.PATH, Tile.PATHBLANK, Tile.ENERGIZER]:
                     node_id = f"{x},{y}"
                     nodes[node_id] = {
                         "id": node_id,
@@ -1010,9 +1010,7 @@ class PacmanMap:
                 "width": width,
                 "height": height,
                 "node_count": len(nodes),
-                "edge_count": len(edges),
-                "wall_count": len(walls),
-                "ghost_wall_count": len(ghost_walls)
+                "edge_count": len(edges)
             },
             "nodes": list(nodes.values()),
             "edges": edges,
