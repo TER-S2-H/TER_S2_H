@@ -51,12 +51,6 @@ def main() -> int:
     parser.add_argument("--max-frames", type=int, default=1000, help="Maximum number of frames")
     parser.add_argument("--duration", type=int, default=150, help="Frame duration in ms")
     parser.add_argument("--no-tunnel-wrap", action="store_true", help="Disable left-right tunnel wrapping")
-    parser.add_argument(
-        "--swap-iterations",
-        type=int,
-        default=0,
-        help="Try this many random swaps to shorten the greedy route",
-    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
     args = parser.parse_args()
@@ -70,14 +64,13 @@ def main() -> int:
         maze_data,
         start=(13, 23),
         wrap_tunnels=wrap_tunnels,
-        swap_iterations=args.swap_iterations,
     )
 
     if args.verbose:
         print("Path steps: %s" % steps)
         print("Food count: %s" % debug.get("food_count"))
         print("Swap iterations: %s" % debug.get("swap_iterations"))
-        print("Swaps applied: %s" % debug.get("swaps_applied"))
+        print("Improvements applied: %s" % debug.get("improvements_applied"))
 
     renderer = JSONMazeRenderer(tile_size=args.size)
     base_image = renderer.render_to_image(maze_data, show_graph=False)

@@ -81,7 +81,7 @@ def main():
         if args.verbose:
             print(f"JSON: {json_file}")
 
-        add_complexity_to_maze_json(json_file, start=(13, 23), wrap_tunnels=True, swap_iterations=0)
+        add_complexity_to_maze_json(json_file, start=(13, 23), wrap_tunnels=True)
         if args.verbose:
             print("Score: embedded in maze.json")
     

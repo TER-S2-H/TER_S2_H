@@ -68,14 +68,16 @@ python3 render_json.py maze_42/maze.json --show-graph
 
 ### Complexity Score
 
-Compute and embed the complexity score in `maze.json` (FoodSearch with food on every path tile, fixed start at (13, 23), greedy nearest with optional swaps):
+Compute and embed the complexity score in `maze.json`. The score uses a greedy nearest-neighbor algorithm with 2-opt local search optimization to find a near-optimal path that visits all food tiles. The swap iterations are automatically determined based on maze size for optimal results.
+
+**Score Formula:** `score = (food_count / steps) × 10` (capped at 10)
 
 ```bash
 python3 maze_complexity.py maze_42/maze.json
 ```
 
 Options:
-- `--swap-iterations N` - Try N random swaps to shorten the greedy route
+- `--no-tunnel-wrap` - Disable left-right tunnel wrapping
 - `-v, --verbose` - Detailed output
 
 ### Complexity Visualization
@@ -92,7 +94,7 @@ Options:
 - `--frame-step N` - Steps per frame (default: 5)
 - `--max-frames N` - Maximum number of frames (default: 1000)
 - `--duration MS` - Frame duration in ms (default: 150)
-- `--swap-iterations N` - Try N random swaps to shorten the greedy route
+- `--no-tunnel-wrap` - Disable left-right tunnel wrapping
 - `-v, --verbose` - Detailed output
 
 ## Project Structure
@@ -118,7 +120,7 @@ Options:
 
 ## JSON Format
 
-The maze is exported as a graph structure. 
+The maze is exported as a graph structure. Ghost house tiles are excluded from nodes and edges, but `walls` and `ghost_walls` are still included.
 
 ```json
 {
@@ -141,14 +143,15 @@ The maze is exported as a graph structure.
     "edge_count": 312,
     "complexity_score": {
       "start": {"x": 13, "y": 23},
-      "food_count": 245,
-      "steps": 1234,
-      "method": "greedy-nearest",
+      "food_count": 322,
+      "steps": 385,
+      "score": 8.36,
+      "method": "greedy-nearest-with-2opt",
       "wrap_tunnels": true,
       "width": 28,
       "height": 31,
-      "swap_iterations": 0,
-      "swaps_applied": 0
+      "swap_iterations": 3220,
+      "improvements_applied": 2
     }
   }
 }

@@ -116,33 +116,49 @@ def _greedy_order(distances: List[List[int]], start_idx: int, candidates: Set[in
     return order
 
 
-def _swap_improve(order: List[int], distances: List[List[int]], iterations: int) -> Tuple[List[int], int]:
-    if iterations <= 0:
+def _determine_swap_iterations(food_count: int) -> int:
+    """
+    Automatically determine the number of improvement iterations based on maze size.
+    Uses a formula that scales with the number of food tiles for near-optimal results.
+    """
+    if food_count <= 10:
+        return food_count * 50
+    elif food_count <= 50:
+        return food_count * 30
+    elif food_count <= 100:
+        return food_count * 20
+    else:
+        return food_count * 10
+
+
+def _two_opt_improve(order: List[int], distances: List[List[int]], iterations: int) -> Tuple[List[int], int]:
+    """
+    Improve route using 2-opt local search algorithm.
+    2-opt is more effective than random swaps for finding near-optimal solutions.
+    """
+    if iterations <= 0 or len(order) <= 3:
         return order, 0
 
     rng = random.Random(0)
-    swaps_applied = 0
+    improvements = 0
     best_order = order[:]
     best_length = _route_length(distances, best_order)
 
     for _ in range(iterations):
+        # Select two random edges in the tour
         i = rng.randint(1, len(best_order) - 2)
-        j = rng.randint(1, len(best_order) - 2)
-        if i == j:
-            continue
-        if i > j:
-            i, j = j, i
-
-        candidate = best_order[:]
-        candidate[i], candidate[j] = candidate[j], candidate[i]
+        j = rng.randint(i + 1, len(best_order) - 1)
+        
+        # Reverse the segment between i and j (2-opt swap)
+        candidate = best_order[:i] + best_order[i:j+1][::-1] + best_order[j+1:]
         candidate_length = _route_length(distances, candidate)
 
         if candidate_length < best_length:
             best_order = candidate
             best_length = candidate_length
-            swaps_applied += 1
+            improvements += 1
 
-    return best_order, swaps_applied
+    return best_order, improvements
 
 
 def _shortest_path(adjacency: List[List[int]], start: int, goal: int) -> List[int]:
@@ -166,7 +182,7 @@ def _shortest_path(adjacency: List[List[int]], start: int, goal: int) -> List[in
     raise ValueError("No path between nodes in route")
 
 
-def compute_greedy_path(maze_data: Dict, start: Position, wrap_tunnels: bool, swap_iterations: int) -> Tuple[int, List[Position], Dict]:
+def compute_greedy_path(maze_data: Dict, start: Position, wrap_tunnels: bool, swap_iterations: int = -1) -> Tuple[int, List[Position], Dict]:
     pos_list, adjacency, width, height = _build_graph(maze_data, wrap_tunnels)
     pos_to_idx = {pos: i for i, pos in enumerate(pos_list)}
 
@@ -174,10 +190,16 @@ def compute_greedy_path(maze_data: Dict, start: Position, wrap_tunnels: bool, sw
         raise ValueError("Start position %s is not walkable in this maze" % (start,))
 
     start_idx = pos_to_idx[start]
+    food_count = len(pos_list)
+    
+    # Automatically determine swap iterations if not specified
+    if swap_iterations < 0:
+        swap_iterations = _determine_swap_iterations(food_count)
+    
     reachable = _reachable_indices(adjacency, start_idx)
     distances = _bfs_all_pairs(adjacency)
     order = _greedy_order(distances, start_idx, reachable)
-    order, swaps_applied = _swap_improve(order, distances, swap_iterations)
+    order, improvements = _two_opt_improve(order, distances, swap_iterations)
 
     steps = _route_length(distances, order)
 
@@ -194,33 +216,40 @@ def compute_greedy_path(maze_data: Dict, start: Position, wrap_tunnels: bool, sw
     return steps, path_positions, {
         "width": width,
         "height": height,
-        "food_count": len(pos_list),
+        "food_count": food_count,
         "swap_iterations": swap_iterations,
-        "swaps_applied": swaps_applied,
+        "improvements_applied": improvements,
     }
 
 
-def compute_complexity_score(maze_data: Dict, start: Position, wrap_tunnels: bool, swap_iterations: int) -> Dict:
-    steps, _, debug = compute_greedy_path(maze_data, start, wrap_tunnels, swap_iterations)
+def compute_complexity_score(maze_data: Dict, start: Position, wrap_tunnels: bool) -> Dict:
+    steps, _, debug = compute_greedy_path(maze_data, start, wrap_tunnels)
+    food_count = debug["food_count"]
+    
+    # Calculate score as (food_count / steps) * 10, capped between 0-10
+    score = (food_count / steps * 10) if steps > 0 else 10.0
+    score = min(10.0, score)  # Cap at 10
+    
     score_data = {
         "start": {"x": start[0], "y": start[1]},
-        "food_count": debug["food_count"],
+        "food_count": food_count,
         "steps": steps,
-        "method": "greedy-nearest",
+        "score": round(score, 2),
+        "method": "greedy-nearest-with-2opt",
         "wrap_tunnels": wrap_tunnels,
         "width": debug["width"],
         "height": debug["height"],
         "swap_iterations": debug["swap_iterations"],
-        "swaps_applied": debug["swaps_applied"],
+        "improvements_applied": debug["improvements_applied"],
     }
     return score_data
 
 
-def add_complexity_to_maze_json(maze_json_path: str, start: Position, wrap_tunnels: bool, swap_iterations: int) -> Dict:
+def add_complexity_to_maze_json(maze_json_path: str, start: Position, wrap_tunnels: bool) -> Dict:
     with open(maze_json_path, "r") as f:
         maze_data = json.load(f)
 
-    score_data = compute_complexity_score(maze_data, start, wrap_tunnels, swap_iterations)
+    score_data = compute_complexity_score(maze_data, start, wrap_tunnels)
     metadata = maze_data.setdefault("metadata", {})
     metadata["complexity_score"] = score_data
 
@@ -241,12 +270,6 @@ def main() -> int:
         action="store_true",
         help="Disable left-right tunnel wrapping",
     )
-    parser.add_argument(
-        "--swap-iterations",
-        type=int,
-        default=0,
-        help="Try this many random swaps to shorten the greedy route",
-    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
     args = parser.parse_args()
@@ -256,12 +279,15 @@ def main() -> int:
         args.maze_json,
         start=(13, 23),
         wrap_tunnels=wrap_tunnels,
-        swap_iterations=args.swap_iterations,
     )
 
     if args.verbose:
         score = updated.get("metadata", {}).get("complexity_score", {})
-        print("Complexity steps: %s" % score.get("steps"))
+        print("Complexity score: %s (steps: %s, food: %s)" % (
+            score.get("score"),
+            score.get("steps"),
+            score.get("food_count")
+        ))
 
     return 0
 
