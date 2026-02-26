@@ -3,30 +3,37 @@ import src.tetris.shape as sh
 import networkx as nx
 import random
 
+def clear_outter_walls(maze):
+    for x in range(31):
+        for y in range(28):
+            if x == 0 or x == 30 or y == 0 or y == 27:
+                maze.add_wall((x, y))
+                maze.close_cell((x, y))
+
 # Define the outter cells as closed to create a pathway around the maze, a pathway going the width of the maze in the middle and a "pathway" going the height of the maze for the symetry
 def clear_static_pathways(maze):
     for x in range(31):
         for y in range(28):
-            if x == 0 or x == 15 or y == 0 or y == 15:
+            if x == 1 or x == 15 or y == 1 or y == 15:
                 maze.close_cell((x, y))
 
 def clear_static_blocks(maze):
     # central block
-    shape = sh.central_block((14, 10), maze)
+    shape = sh.central_block((13, 10), maze)
     shape.place_shape()
 
     # left blocks
-    shape = sh.side_block((12, 0), maze)
+    shape = sh.side_block((10, 0), maze)
     shape.place_shape()
 
     shape = sh.side_block((16, 0), maze)
     shape.place_shape()
 
     # right blocks
-    shape = sh.side_block((12, 21), maze)
+    shape = sh.side_block((10, 23), maze)
     shape.place_shape()
 
-    shape = sh.side_block((16, 21), maze)
+    shape = sh.side_block((16, 23), maze)
     shape.place_shape()
 
 # Create a random shape at the given node if it satisfies the constraints of being placed in the maze
@@ -40,6 +47,7 @@ def create_random_shape(maze, node):
     return None
 
 def static_setup(maze):
+    clear_outter_walls(maze)
     clear_static_pathways(maze)
     clear_static_blocks(maze)
 

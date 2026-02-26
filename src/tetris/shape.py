@@ -43,7 +43,7 @@ class Shape(ABC):
 class central_block(Shape):
     def define_nodes(self):
         x, y = self.init_node
-        for xi in range(3):
+        for xi in range(5):
             for yi in range(8):
                 if xi != 0 or yi != 0:
                     self.nodes.append((x + xi, y + yi))
@@ -54,56 +54,28 @@ class central_block(Shape):
 class side_block(Shape):
     def define_nodes(self):
         x, y = self.init_node
-        for xi in range(3):
-            for yi in range(7):
+        for xi in range(5):
+            for yi in range(5):
                 if xi != 0 or yi != 0:
                     self.nodes.append((x + xi, y + yi))
     
     def satisfies_constraints(self):
         return self.is_available()
 
-# Three cells horizontal wall
+# 3x2 horizontal wall
 class WallSH(Shape):
     def define_nodes(self):
         x, y = self.init_node
-        self.nodes.append((x, y + 1))
-        self.nodes.append((x, y + 2))
+        for i in range(2):
+            for j in range(3):
+                if i != 0 or j != 0:
+                    self.nodes.append((x + i, y + j))
     
     def satisfies_constraints(self):
         return self.is_available()
     
-# Three cells vertical wall
+# 3x2 vertical wall
 class WallSV(Shape):
-    def define_nodes(self):
-        x, y = self.init_node
-        self.nodes.append((x + 1, y))
-        self.nodes.append((x + 2, y))
-    
-    def satisfies_constraints(self):
-        return self.is_available()
-    
-# Four cells horizontal wall
-class WallLH(Shape):
-    def define_nodes(self):
-        x, y = self.init_node
-        for i in range(1, 4):
-            self.nodes.append((x, y + i))
-    
-    def satisfies_constraints(self):
-        return self.is_available()
-
-# Four cells vertical wall
-class WallLV(Shape):
-    def define_nodes(self):
-        x, y = self.init_node
-        for i in range(1, 4):
-            self.nodes.append((x + i, y))
-    
-    def satisfies_constraints(self):
-        return self.is_available()
-    
-# 2x3 horizontal block
-class BlockSH(Shape):
     def define_nodes(self):
         x, y = self.init_node
         for i in range(3):
@@ -114,32 +86,8 @@ class BlockSH(Shape):
     def satisfies_constraints(self):
         return self.is_available()
     
-# 2x3 vertical block
-class BlockSV(Shape):
-    def define_nodes(self):
-        x, y = self.init_node
-        for i in range(2):
-            for j in range(3):
-                if i != 0 or j != 0:
-                    self.nodes.append((x + i, y + j))
-    
-    def satisfies_constraints(self):
-        return self.is_available()
-
-# 2x4 horizontal block
-class BlockLH(Shape):
-    def define_nodes(self):
-        x, y = self.init_node
-        for i in range(4):
-            for j in range(2):
-                if i != 0 or j != 0:
-                    self.nodes.append((x + i, y + j))
-    
-    def satisfies_constraints(self):
-        return self.is_available()
-    
-# 2x4 vertical block
-class BlockLV(Shape):
+# 2x4 horizontal wall
+class WallLH(Shape):
     def define_nodes(self):
         x, y = self.init_node
         for i in range(2):
@@ -150,15 +98,79 @@ class BlockLV(Shape):
     def satisfies_constraints(self):
         return self.is_available()
 
-#  L shape right
-class L_shapR(Shape):
+# 2x4 vertical wall
+class WallLV(Shape):
     def define_nodes(self):
         x, y = self.init_node
-        for i in range(1, 4):
-            self.nodes.append((x + i, y))
+        for i in range(4):
+            for j in range(2):
+                if i != 0 or j != 0:
+                    self.nodes.append((x + i, y + j))
+    
+    def satisfies_constraints(self):
+        return self.is_available()
+    
+# 3x4 horizontal block
+class BlockSH(Shape):
+    def define_nodes(self):
+        x, y = self.init_node
+        for i in range(3):
+            for j in range(4):
+                if i != 0 or j != 0:
+                    self.nodes.append((x + i, y + j))
+    
+    def satisfies_constraints(self):
+        return self.is_available()
+    
+# 3x4 vertical block
+class BlockSV(Shape):
+    def define_nodes(self):
+        x, y = self.init_node
+        for i in range(4):
+            for j in range(3):
+                if i != 0 or j != 0:
+                    self.nodes.append((x + i, y + j))
+    
+    def satisfies_constraints(self):
+        return self.is_available()
+
+# 3x5 horizontal block
+class BlockLH(Shape):
+    def define_nodes(self):
+        x, y = self.init_node
+        for i in range(3):
+            for j in range(5):
+                if i != 0 or j != 0:
+                    self.nodes.append((x + i, y + j))
+    
+    def satisfies_constraints(self):
+        return self.is_available()
+    
+# 3x5 vertical block
+class BlockLV(Shape):
+    def define_nodes(self):
+        x, y = self.init_node
+        for i in range(5):
+            for j in range(3):
+                if i != 0 or j != 0:
+                    self.nodes.append((x + i, y + j))
+    
+    def satisfies_constraints(self):
+        return self.is_available()
+
+#  L shape down
+class L_shapeD(Shape):
+    def define_nodes(self):
+        x, y = self.init_node
+        for i in range(3):
+            for j in range(2):
+                if i != 0 or j != 0:
+                    self.nodes.append((x + i, y + j))
         
-        for i in range(1, 3):
-            self.nodes.append((x + 3, y + i))
+        
+        for i in range(2):
+            for j in range(5):
+                self.nodes.append((x + 3 + i, y + j))
     
     def satisfies_constraints(self):
         return self.is_available()
@@ -167,37 +179,15 @@ class L_shapR(Shape):
 class L_shapeU(Shape):
     def define_nodes(self):
         x, y = self.init_node
-        for i in range(1, 4):
-            self.nodes.append((x, y + i))
+        for i in range(5):
+            for j in range(2):
+                if i != 0 or j != 0:
+                    self.nodes.append((x + i, y + j))
         
-        for i in range(1, 3):
-            self.nodes.append((x - i, y + 3))
-    
-    def satisfies_constraints(self):
-        return self.is_available()
-    
-#  L shape left
-class L_shapeL(Shape):
-    def define_nodes(self):
-        x, y = self.init_node
-        for i in range(1, 4):
-            self.nodes.append((x + i, y))
         
-        for i in range(1, 3):
-            self.nodes.append((x, y - i))
-    
-    def satisfies_constraints(self):
-        return self.is_available()
-    
-#  L shape down
-class L_shapeD(Shape):
-    def define_nodes(self):
-        x, y = self.init_node
-        for i in range(1, 4):
-            self.nodes.append((x, y + i))
-        
-        for i in range(1, 3):
-            self.nodes.append((x + i, y + 3))
+        for i in range(2):
+            for j in range(3):
+                self.nodes.append((x + i, y + 2 + j))
     
     def satisfies_constraints(self):
         return self.is_available()
@@ -206,37 +196,14 @@ class L_shapeD(Shape):
 class T_shapeR(Shape):
     def define_nodes(self):
         x, y = self.init_node
-        for i in range(1, 7):
-            self.nodes.append((x + i, y))
+        for i in range(8):
+            for j in range(2):
+                if i != 0 or j != 0:
+                    self.nodes.append((x + i, y + j))
         
-        for i in range(1, 3):
-            self.nodes.append((x + 3, y + i))
-    
-    def satisfies_constraints(self):
-        return self.is_available()
-    
-# T shape up
-class T_shapeU(Shape):
-    def define_nodes(self):
-        x, y = self.init_node
-        for i in range(1, 7):
-            self.nodes.append((x, y + i))
-        
-        for i in range(1, 3):
-            self.nodes.append((x - i, y + 3))
-    
-    def satisfies_constraints(self):
-        return self.is_available()
-    
-# T shape left
-class T_shapeL(Shape):
-    def define_nodes(self):
-        x, y = self.init_node
-        for i in range(1, 7):
-            self.nodes.append((x + i, y))
-        
-        for i in range(1, 3):
-            self.nodes.append((x + 3, y - i))
+        for i in range(2):
+            for j in range(3):
+                self.nodes.append((x + 3 + i, y + 2 + j))
     
     def satisfies_constraints(self):
         return self.is_available()
@@ -245,11 +212,14 @@ class T_shapeL(Shape):
 class T_shapeD(Shape):
     def define_nodes(self):
         x, y = self.init_node
-        for i in range(1, 7):
-            self.nodes.append((x, y + i))
+        for i in range(2):
+            for j in range(8):
+                if i != 0 or j != 0:
+                    self.nodes.append((x + i, y + j))
         
-        for i in range(1, 3):
-            self.nodes.append((x + i, y + 3))
+        for i in range(3):
+            for j in range(2):
+                self.nodes.append((x + 2 + i, y + 3 + j))
     
     def satisfies_constraints(self):
         return self.is_available()
