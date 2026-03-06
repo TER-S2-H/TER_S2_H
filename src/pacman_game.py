@@ -101,16 +101,17 @@ GHOST_FRIGHT_FLASH_T: float = 2.0   # seconds remaining when flashing starts
 GHOST_EAT_SCORES: List[int] = [200, 400, 800, 1600]  # cumulative per power pellet
 
 # Per-ghost config: (name, colour, scatter_corner, release_delay_s, start_tile)
-# start_tile is a walkable PATHBLANK tile inside or at the entrance of the ghost house.
-#   Blinky  — (13,11)  junction above the door; released immediately
-#   Pinky   — ( 9,12)  left side column, just inside
-#   Inky    — ( 9,14)  left side column, lower
-#   Clyde   — (18,12)  right side column, just inside
+# The only walkable tiles strictly inside the ghost house corners
+# (10,11)-(17,15) are on the y=11 corridor — ghosts spread across it.
+#   Blinky  (13,11)  centre, above door — exits immediately
+#   Pinky   (11,11)  left quarter
+#   Inky    (14,11)  right of centre
+#   Clyde   (17,11)  right corner
 GHOST_CONFIGS: List[Tuple[str, Tuple[int,int,int], Tuple[int,int], float, Tuple[int,int]]] = [
     ("blinky", (255,   0,   0), (25,  0),  0.0, (13, 11)),
-    ("pinky",  (255, 184, 255), ( 2,  0),  3.0, ( 9, 12)),
-    ("inky",   (  0, 255, 255), (27, 30),  6.0, ( 9, 14)),
-    ("clyde",  (255, 184,  82), ( 0, 30),  9.0, (18, 12)),
+    ("pinky",  (255, 184, 255), ( 2,  0),  3.0, (11, 11)),
+    ("inky",   (  0, 255, 255), (27, 30),  6.0, (14, 11)),
+    ("clyde",  (255, 184,  82), ( 0, 30),  9.0, (17, 11)),
 ]
 
 PACMAN_LIVES: int = 3
