@@ -106,23 +106,35 @@ python3 pacman_game.py maze_42/maze.json -s 24
 
 | Key | Action |
 |---|---|
-| Arrow keys / WASD | Move Pac-Man |
+| Arrow keys | Move Pac-Man |
 | `R` | Restart |
 | `Q` / `Escape` | Quit |
 
-**Pellet placement (auto-computed):**
+**Gameplay features:**
+- **4 ghosts** — Blinky (red), Pinky (pink), Inky (cyan), Clyde (orange) — each with
+  classic targeting behaviour from the original arcade game.
+- **Ghost modes** cycle automatically: scatter → chase → scatter → chase (repeating).
+  Eating a power pellet triggers **frightened** mode (ghosts flash before returning).
+- **Ghost house:** ghosts start inside, patrol left/right, then exit via the house door
+  one by one on a staggered release schedule (Blinky instant, +3 s each after).
+- **Lives system** (3 lives). Touched by a ghost → respawn; lose all lives → Game Over.
+- **Score:** dots = 10 pts, energizers = 50 pts, eating a frightened ghost = 200/400/800/1600 pts.
+- **Win condition:** clear all dots and energizers.
+
+**Pellet placement (auto-computed at runtime, not stored in `maze.json`):**
 - Every walkable `PATH` tile gets a pellet **except**:
   - Ghost-house surround zone: `x ∈ [9, 18]`, `y ∈ [10, 16]`
   - Tunnel edge columns: `x == 0` or `x == 27`
   - Pac-Man spawn tile: `(13, 23)`
-- **4 energizers** (power pellets) placed at the 4 corner anchors
-  `(1, 3)`, `(26, 3)`, `(1, 23)`, `(26, 23)` — snapped to the nearest eligible tile.
+- **4 energizers** placed near corner anchors `(1, 3)`, `(26, 3)`, `(1, 23)`, `(26, 23)`,
+  snapped to the nearest eligible tile.
 
-**Architecture** (designed to support ghosts later):
-- `GameState` — holds all mutable data (pellets, energizer timers, Pac-Man).
-  Add `self.ghosts` here when implementing ghost AI.
-- `GameRenderer` — pure drawing, no game logic.
-  Add `draw_ghost()` here when ready.
+**Architecture:**
+- `GameState` — all mutable game data: maze graph, Pac-Man, 4 ghost AI agents, pellets,
+  score, lives, scatter/chase mode-cycle timer.
+- `GameRenderer` — pure drawing (no game logic): maze walls, pellets, energizers, Pac-Man
+  with mouth animation, ghost bodies with eyes (full colour / frightened flash / dead silhouette).
+- `GhostState` — per-ghost state machine (`waiting → exiting → scatter/chase/frightened/dead`).
 
 ---
 
