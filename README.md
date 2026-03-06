@@ -1,33 +1,37 @@
-# Pac-Man Maze Generator
+# Pac-Man Maze Generator & Game
 
-Generate random Pac-Man-style mazes with JSON graph export, PNG visualization, text rendering, complexity scoring, and animated path visualization.
+Generate random Pac-Man-style mazes, score them, animate the optimal path, and play them interactively.
 
 ## Requirements
 
-Python 3.6+ with Pillow library:
+Python 3.6+ with:
 
 ```bash
-pip install Pillow
+pip install Pillow          # maze generation, rendering, GIF output
+pip install pygame          # interactive game only
 ```
 
 ## Quick Start
 
 ```bash
-# Generate a maze (JSON + PNG + TXT)
+# 1. Generate a maze (JSON + PNG + TXT — maze structure only, no pellets)
 python3 generate.py --seed 42
 
-# Score it (updates maze.json in place)
+# 2. Score it (embeds complexity score in maze.json)
 python3 maze_complexity.py maze_42/maze.json -v
 
-# Animate the best-found path
+# 3. Animate the best-found path
 python3 maze_complexity_visualize.py maze_42/maze.json -v
+
+# 4. Play it!
+python3 pacman_game.py maze_42/maze.json
 ```
 
 Output folder `maze_[seed]/` contains:
-- `maze.json` — Graph + embedded complexity score
-- `maze.png` — Visual rendering (560×620 px at 20 px/tile)
-- `maze.txt` — ASCII art
-- `maze_path.gif` — Animated path (after running the visualizer)
+- `maze.json` — Graph + embedded complexity score (maze structure only)
+- `maze.png` — Visual rendering (560×620 px at 20 px/tile, maze structure only)
+- `maze.txt` — ASCII art (maze structure only)
+- `maze_path.gif` — Animated optimal path (after running the visualizer)
 
 ---
 
@@ -79,7 +83,48 @@ python3 render_json.py maze_42/maze.json -o out.png -s 30 --show-graph
 
 ---
 
-### Complexity Score
+### Play the Game
+
+Loads a `maze.json` and launches an interactive Pac-Man game.
+Pellets, energizers, and Pac-Man are **not** stored in the JSON — they are
+computed at runtime from the maze graph.
+
+```bash
+python3 pacman_game.py <maze.json> [options]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `-s, --size SIZE` | `20` | Tile size in pixels |
+
+```bash
+python3 pacman_game.py maze_42/maze.json
+python3 pacman_game.py maze_42/maze.json -s 24
+```
+
+**Controls:**
+
+| Key | Action |
+|---|---|
+| Arrow keys / WASD | Move Pac-Man |
+| `R` | Restart |
+| `Q` / `Escape` | Quit |
+
+**Pellet placement (auto-computed):**
+- Every walkable `PATH` tile gets a pellet **except**:
+  - Ghost-house surround zone: `x ∈ [9, 18]`, `y ∈ [10, 16]`
+  - Tunnel edge columns: `x == 0` or `x == 27`
+  - Pac-Man spawn tile: `(13, 23)`
+- **4 energizers** (power pellets) placed at the 4 corner anchors
+  `(1, 3)`, `(26, 3)`, `(1, 23)`, `(26, 23)` — snapped to the nearest eligible tile.
+
+**Architecture** (designed to support ghosts later):
+- `GameState` — holds all mutable data (pellets, energizer timers, Pac-Man).
+  Add `self.ghosts` here when implementing ghost AI.
+- `GameRenderer` — pure drawing, no game logic.
+  Add `draw_ghost()` here when ready.
+
+---
 
 Computes the minimum steps to visit all food tiles from a fixed start position
 (open walk — no return required) and embeds the result in `maze.json`.
@@ -153,20 +198,26 @@ python3 maze_complexity_visualize.py maze_42/maze.json -o path.gif --frame-step 
 ├── maze_complexity.py            — Wrapper: complexity scorer
 ├── maze_complexity_visualize.py  — Wrapper: path animator
 ├── render_json.py                — Wrapper: JSON renderer
+├── pacman_game.py                — Wrapper: interactive game
 └── src/
     ├── generate.py               — Generator implementation
     ├── maze_complexity.py        — Complexity scoring (TSP solver)
     ├── maze_complexity_visualize.py — GIF animation
     ├── render_json.py            — Image renderer
     ├── pacman_map.py             — Maze generation logic
-    └── maze_renderer.py          — Rendering helpers
+    ├── maze_renderer.py          — Rendering helpers
+    └── pacman_game.py            — Game logic + pygame renderer
 
 maze_[seed]/                      — Generated output folder
-├── maze.json                     — Graph + complexity score
-├── maze.png                      — Visual rendering
-├── maze.txt                      — ASCII art
+├── maze.json                     — Graph + complexity score (maze only)
+├── maze.png                      — Visual rendering (maze only)
+├── maze.txt                      — ASCII art (maze only)
 └── maze_path.gif                 — Animated path (optional)
 ```
+
+> **Note:** `maze.json`, `maze.png`, and `maze.txt` contain only the maze
+> structure (walls, paths, graph). Pellets, energizers, and Pac-Man are
+> computed at runtime by `pacman_game.py` and never written to disk.
 
 All root-level scripts are thin wrappers that import from `src/` and call `main()`.
 
