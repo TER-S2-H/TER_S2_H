@@ -107,7 +107,7 @@ class GameState:
             if node["type"] != "GHOSTSPACE":
                 self.walkable.add((node["x"], node["y"]))
 
-        # Adjacency map (edges already include tunnel connections from generate.py)
+        # Adjacency map (lateral edges; wrap-around handled by tunnel_rows)
         self.neighbors: Dict[Tuple[int, int], Set[Tuple[int, int]]] = {
             p: set() for p in self.walkable
         }
@@ -118,6 +118,12 @@ class GameState:
                 self.neighbors[a].add(b)
             if b in self.neighbors:
                 self.neighbors[b].add(a)
+
+        # Rows where both the left edge (x=0) and right edge (x=width-1) are walkable
+        # — these are horizontal tunnel passages.
+        left_ys  = {y for (x, y) in self.walkable if x == 0}
+        right_ys = {y for (x, y) in self.walkable if x == self.width - 1}
+        self.tunnel_rows: Set[int] = left_ys & right_ys
 
         # Compute pellet-eligible tiles once
         pellet_candidates: List[Tuple[int, int]] = []
@@ -158,9 +164,11 @@ class GameState:
         self.pacman_tile:     Tuple[int, int] = PACMAN_START
         self.pacman_target:   Tuple[int, int] = PACMAN_START
         self.pacman_progress: float           = 0.0
-        self.pacman_dir:      Tuple[int, int] = DIR_NONE
-        self.pacman_next_dir: Tuple[int, int] = DIR_NONE
-        self.pacman_moving:   bool            = False
+        self.pacman_dir:            Tuple[int, int] = DIR_NONE
+        self.pacman_next_dir:      Tuple[int, int] = DIR_NONE
+        self.pacman_moving:        bool            = False
+        # True while Pac-Man is sliding through a tunnel (visual: off-screen exit)
+        self.pacman_tunnel_transit: bool           = False
 
         # Animation
         self.mouth_phase: float = 0.0
@@ -174,7 +182,14 @@ class GameState:
     # ------------------------------------------------------------------
     @property
     def pacman_px(self) -> float:
-        """Interpolated x position in tile coordinates."""
+        """Interpolated x position in tile coordinates.
+
+        During a tunnel transit the position slides *off-screen* in the
+        direction of travel rather than jumping to the far side.
+        """
+        if self.pacman_tunnel_transit:
+            # Slide off the edge: move further in the current direction
+            return self.pacman_tile[0] + self.pacman_dir[0] * self.pacman_progress
         return self.pacman_tile[0] + (self.pacman_target[0] - self.pacman_tile[0]) * self.pacman_progress
 
     @property
@@ -191,7 +206,38 @@ class GameState:
             tile[0] + direction[0],
             tile[1] + direction[1],
         )
-        return neighbor in self.neighbors.get(tile, set())
+        if neighbor in self.neighbors.get(tile, set()):
+            return True
+        # Tunnel wrap: left edge moving left, or right edge moving right
+        if direction == (-1, 0) and tile[0] == 0 and tile[1] in self.tunnel_rows:
+            return True
+        if direction == (1, 0) and tile[0] == self.width - 1 and tile[1] in self.tunnel_rows:
+            return True
+        return False
+
+    def _target_tile(
+        self, tile: Tuple[int, int], direction: Tuple[int, int]
+    ) -> Tuple[int, int]:
+        """Return the tile Pac-Man lands on when moving in direction from tile.
+
+        Handles tunnel wrap-around: exiting the left edge arrives at the
+        right edge and vice versa.
+        """
+        if direction == (-1, 0) and tile[0] == 0 and tile[1] in self.tunnel_rows:
+            return (self.width - 1, tile[1])
+        if direction == (1, 0) and tile[0] == self.width - 1 and tile[1] in self.tunnel_rows:
+            return (0, tile[1])
+        return (tile[0] + direction[0], tile[1] + direction[1])
+
+    def _is_tunnel_move(
+        self, tile: Tuple[int, int], direction: Tuple[int, int]
+    ) -> bool:
+        """True when the move exits through a tunnel."""
+        return (
+            direction == (-1, 0) and tile[0] == 0 and tile[1] in self.tunnel_rows
+        ) or (
+            direction == (1, 0) and tile[0] == self.width - 1 and tile[1] in self.tunnel_rows
+        )
 
     # ------------------------------------------------------------------
     def update(self, dt: float, requested_dir: Tuple[int, int]):
@@ -217,8 +263,9 @@ class GameState:
 
             if self.pacman_progress >= 1.0:
                 # Arrived at target tile
-                self.pacman_tile     = self.pacman_target
-                self.pacman_progress = 0.0
+                self.pacman_tile            = self.pacman_target
+                self.pacman_progress        = 0.0
+                self.pacman_tunnel_transit  = False
 
                 # Eat pellet / energizer on arrival
                 self._eat(self.pacman_tile)
@@ -229,12 +276,10 @@ class GameState:
                     if d != DIR_NONE and self._can_move(self.pacman_tile, d):
                         if d == self.pacman_next_dir:
                             self.pacman_next_dir = DIR_NONE
-                        self.pacman_dir    = d
-                        self.pacman_target = (
-                            self.pacman_tile[0] + d[0],
-                            self.pacman_tile[1] + d[1],
-                        )
-                        self.pacman_progress = 0.0
+                        self.pacman_dir            = d
+                        self.pacman_target         = self._target_tile(self.pacman_tile, d)
+                        self.pacman_progress       = 0.0
+                        self.pacman_tunnel_transit = self._is_tunnel_move(self.pacman_tile, d)
                         moved = True
                         break
 
@@ -248,13 +293,11 @@ class GameState:
                 if d != DIR_NONE and self._can_move(self.pacman_tile, d):
                     if d == self.pacman_next_dir:
                         self.pacman_next_dir = DIR_NONE
-                    self.pacman_dir    = d
-                    self.pacman_target = (
-                        self.pacman_tile[0] + d[0],
-                        self.pacman_tile[1] + d[1],
-                    )
-                    self.pacman_progress = 0.0
-                    self.pacman_moving   = True
+                    self.pacman_dir            = d
+                    self.pacman_target         = self._target_tile(self.pacman_tile, d)
+                    self.pacman_progress       = 0.0
+                    self.pacman_tunnel_transit = self._is_tunnel_move(self.pacman_tile, d)
+                    self.pacman_moving         = True
                     break
 
         # Mouth animation
