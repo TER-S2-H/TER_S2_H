@@ -67,8 +67,9 @@ def main() -> int:
     )
 
     if args.verbose:
-        print("Path steps: %s" % steps)
-        print("Food count: %s" % debug.get("food_count"))
+        print("Steps         : %s  (method: %s)" % (debug.get("steps"), debug.get("method")))
+        print("MST lower bound: %s" % debug.get("mst_lower_bound"))
+        print("Food count    : %s" % debug.get("food_count"))
 
     renderer = JSONMazeRenderer(tile_size=args.size)
     base_image = renderer.render_to_image(maze_data, show_graph=False)
