@@ -68,6 +68,49 @@ ENERGY_COL    = (255, 255, 255)
 GHOST_WALL_COL= (255, 182, 193)
 POWER_UP_COL  = (  0, 200, 255)
 
+# Ghost colours
+GHOST_FRIGHT_COL  = (  0,   0, 200)
+GHOST_FLASH_COL   = (255, 255, 255)
+GHOST_EYE_WHITE   = (255, 255, 255)
+GHOST_EYE_IRIS    = (  0,   0, 200)
+
+# Ghost modes
+GHOST_WAITING    = "waiting"      # pre-release, frozen at start tile
+GHOST_SCATTER    = "scatter"      # retreat to assigned corner
+GHOST_CHASE      = "chase"        # use targeting algorithm
+GHOST_FRIGHTENED = "frightened"   # random turns, blue
+GHOST_DEAD       = "dead"         # eaten — brief pause then respawn
+
+# Global scatter/chase schedule [(mode, duration_s)] — last entry repeats
+GHOST_MODE_SCHEDULE: List[Tuple[str, float]] = [
+    (GHOST_SCATTER,  7.0),
+    (GHOST_CHASE,   20.0),
+    (GHOST_SCATTER,  7.0),
+    (GHOST_CHASE,   20.0),
+    (GHOST_SCATTER,  5.0),
+    (GHOST_CHASE,   20.0),
+    (GHOST_SCATTER,  5.0),
+    (GHOST_CHASE,  9999.0),
+]
+
+GHOST_SPEED:          float = 4.5   # tiles / sec
+GHOST_FRIGHT_SPEED:   float = 2.5
+GHOST_DEAD_DURATION:  float = 3.0   # seconds before respawn
+GHOST_FRIGHT_FLASH_T: float = 2.0   # seconds remaining when flashing starts
+
+GHOST_START_TILE:  Tuple[int, int] = (13, 11)  # above ghost door (y=11 corridor)
+GHOST_EAT_SCORES: List[int]        = [200, 400, 800, 1600]  # cumulative per power pellet
+
+# Per-ghost config: (name, colour, scatter_corner, release_delay_s)
+GHOST_CONFIGS: List[Tuple[str, Tuple[int, int, int], Tuple[int, int], float]] = [
+    ("blinky", (255,   0,   0), (25,  0),  0.0),
+    ("pinky",  (255, 184, 255), ( 2,  0),  3.0),
+    ("inky",   (  0, 255, 255), (27, 30),  6.0),
+    ("clyde",  (255, 184,  82), ( 0, 30),  9.0),
+]
+
+PACMAN_LIVES: int = 3
+
 KEY_TO_DIR = {}   # populated after pygame.init()
 
 
@@ -84,17 +127,220 @@ def _nearest_pellet(
 
 
 # ---------------------------------------------------------------------------
-# Game state
+# Ghost
 # ---------------------------------------------------------------------------
 
-class GameState:
+class GhostState:
     """
-    Holds all mutable game data.
+    One ghost.  Uses the same tile-progress movement model as Pac-Man.
 
-    To add ghosts later:
-      - Add  self.ghosts: List[GhostState]  in __init__ / reset()
-      - Call ghost.update(dt, self) in update()
+    Targeting algorithms (reference: Pac-Man Dossier):
+      blinky — direct chase: Pac-Man's current tile
+      pinky  — 4-tile ambush ahead of Pac-Man (with classic UP overflow bug)
+      inky   — flanking: 2× vector from Blinky to 2 tiles ahead of Pac-Man
+      clyde  — shy: chases Pac-Man if ≥8 tiles away, else retreats to corner
+
+    Direction priority at intersections: UP > LEFT > DOWN > RIGHT (never reverse).
+    Frightened: random valid direction, half speed.
     """
+
+    def __init__(
+        self,
+        name: str,
+        color: Tuple[int, int, int],
+        scatter_corner: Tuple[int, int],
+        release_delay: float,
+    ):
+        self.name           = name
+        self.color          = color
+        self.scatter_corner = scatter_corner
+        self.release_delay  = release_delay
+        self.reset()
+
+    # ------------------------------------------------------------------
+    def reset(self):
+        self.tile:           Tuple[int, int] = GHOST_START_TILE
+        self.target:         Tuple[int, int] = GHOST_START_TILE
+        self.progress:       float           = 0.0
+        self.dir:            Tuple[int, int] = DIR_NONE
+        self.moving:         bool            = False
+
+        self.mode:           str             = GHOST_WAITING
+        self.wait_timer:     float           = self.release_delay
+        self.fright_timer:   float           = 0.0
+        self.dead_timer:     float           = 0.0
+
+    # ------------------------------------------------------------------
+    @property
+    def px(self) -> float:
+        return self.tile[0] + (self.target[0] - self.tile[0]) * self.progress
+
+    @property
+    def py(self) -> float:
+        return self.tile[1] + (self.target[1] - self.tile[1]) * self.progress
+
+    # ------------------------------------------------------------------
+    def frighten(self, duration: float):
+        """Enter frightened mode (power pellet eaten by Pac-Man)."""
+        if self.mode in (GHOST_WAITING, GHOST_DEAD):
+            return
+        # Force reversal — swap tile↔target and invert progress
+        if self.moving and self.dir != DIR_NONE:
+            self.tile, self.target = self.target, self.tile
+            self.progress = 1.0 - self.progress
+            self.dir = (-self.dir[0], -self.dir[1])
+        self.mode         = GHOST_FRIGHTENED
+        self.fright_timer = duration
+
+    def eat(self):
+        """Ghost was eaten while frightened — short pause then respawn."""
+        self.mode       = GHOST_DEAD
+        self.dead_timer = GHOST_DEAD_DURATION
+        self.moving     = False
+
+    # ------------------------------------------------------------------
+    def update(self, dt: float, state: "GameState"):
+        if self.mode == GHOST_WAITING:
+            self.wait_timer -= dt
+            if self.wait_timer <= 0.0:
+                self.mode = state.ghost_mode
+                self._start_moving(state)
+            return
+
+        if self.mode == GHOST_DEAD:
+            self.dead_timer -= dt
+            if self.dead_timer <= 0.0:
+                self.reset()
+                self.mode       = state.ghost_mode
+                self.wait_timer = 0.0
+                self._start_moving(state)
+            return
+
+        if self.mode == GHOST_FRIGHTENED:
+            self.fright_timer -= dt
+            if self.fright_timer <= 0.0:
+                self.mode = state.ghost_mode
+
+        speed = GHOST_FRIGHT_SPEED if self.mode == GHOST_FRIGHTENED else GHOST_SPEED
+
+        if self.moving:
+            self.progress += speed * dt
+            if self.progress >= 1.0:
+                self.tile     = self.target
+                self.progress = 0.0
+                self._pick_next(state)
+        else:
+            self._start_moving(state)
+
+    # ------------------------------------------------------------------
+    def _start_moving(self, state: "GameState"):
+        """Choose first direction and begin moving."""
+        t  = self._get_target(state)
+        d  = self._choose_dir(self.tile, t, DIR_NONE, state)
+        if d != DIR_NONE:
+            self._commit(d, state)
+
+    def _pick_next(self, state: "GameState"):
+        """Called on tile arrival — choose the next direction."""
+        import random
+        reverse = (-self.dir[0], -self.dir[1]) if self.dir != DIR_NONE else DIR_NONE
+
+        if self.mode == GHOST_FRIGHTENED:
+            options = [
+                d for d in (DIR_UP, DIR_LEFT, DIR_DOWN, DIR_RIGHT)
+                if d != reverse and state._can_move(self.tile, d)
+            ]
+            if not options and reverse != DIR_NONE and state._can_move(self.tile, reverse):
+                options = [reverse]
+            if options:
+                self._commit(random.choice(options), state)
+            else:
+                self.moving = False
+        else:
+            target = self._get_target(state)
+            d      = self._choose_dir(self.tile, target, reverse, state)
+            if d == DIR_NONE and reverse != DIR_NONE and state._can_move(self.tile, reverse):
+                d = reverse          # dead end — reverse
+            if d != DIR_NONE:
+                self._commit(d, state)
+            else:
+                self.moving = False
+
+    def _commit(self, direction: Tuple[int, int], state: "GameState"):
+        self.dir      = direction
+        self.target   = state._target_tile(self.tile, direction)
+        self.progress = 0.0
+        self.moving   = True
+
+    # ------------------------------------------------------------------
+    def _choose_dir(
+        self,
+        from_tile: Tuple[int, int],
+        target:    Tuple[int, int],
+        forbidden: Tuple[int, int],
+        state:     "GameState",
+    ) -> Tuple[int, int]:
+        """
+        Classic ghost direction selection.
+        Priority when distances tie: UP > LEFT > DOWN > RIGHT.
+        Never choose the forbidden (reverse) direction.
+        """
+        best_dir  = DIR_NONE
+        best_dist = float("inf")
+        for d in (DIR_UP, DIR_LEFT, DIR_DOWN, DIR_RIGHT):
+            if d == forbidden:
+                continue
+            if not state._can_move(from_tile, d):
+                continue
+            nb   = state._target_tile(from_tile, d)
+            dist = (nb[0] - target[0]) ** 2 + (nb[1] - target[1]) ** 2
+            if dist < best_dist:
+                best_dist = dist
+                best_dir  = d
+        return best_dir
+
+    # ------------------------------------------------------------------
+    def _get_target(self, state: "GameState") -> Tuple[int, int]:
+        """Target tile for scatter or chase mode."""
+        if self.mode == GHOST_SCATTER:
+            return self.scatter_corner
+
+        # ---- CHASE ----
+        px, py   = state.pacman_tile
+        pdx, pdy = state.pacman_dir if state.pacman_dir != DIR_NONE else (0, 0)
+
+        if self.name == "blinky":
+            # Direct chase: Pac-Man's tile
+            return (px, py)
+
+        elif self.name == "pinky":
+            # 4 tiles ahead of Pac-Man (+ classic UP overflow)
+            tx = px + 4 * pdx
+            ty = py + 4 * pdy
+            if state.pacman_dir == DIR_UP:
+                tx -= 4
+            return (tx, ty)
+
+        elif self.name == "inky":
+            # Pivot 2 tiles ahead, doubled from Blinky's position
+            tx = px + 2 * pdx
+            ty = py + 2 * pdy
+            if state.pacman_dir == DIR_UP:
+                tx -= 2
+            blinky = next((g for g in state.ghosts if g.name == "blinky"), None)
+            bx, by = blinky.tile if blinky else (0, 0)
+            return (bx + 2 * (tx - bx), by + 2 * (ty - by))
+
+        else:  # clyde
+            # Target Pac-Man when ≥8 tiles away, else retreat to scatter corner
+            dx = px - self.tile[0]
+            dy = py - self.tile[1]
+            if dx * dx + dy * dy >= 64:
+                return (px, py)
+            return self.scatter_corner
+
+class GameState:
+    """All mutable game data: maze topology, Pac-Man, ghosts, score, lives."""
 
     def __init__(self, maze_data: Dict):
         meta = maze_data["metadata"]
@@ -148,6 +394,12 @@ class GameState:
         # All other candidates are normal pellets
         self.pellets: Set[Tuple[int, int]] = set(remaining)
 
+        # Build ghost objects (topology-independent — reset() sets their state)
+        self.ghosts: List[GhostState] = [
+            GhostState(name, color, corner, delay)
+            for name, color, corner, delay in GHOST_CONFIGS
+        ]
+
         self.score: int = 0
         self.reset()
 
@@ -174,10 +426,21 @@ class GameState:
         self.mouth_phase: float = 0.0
 
         # State flags
-        self.score      = 0
+        self.score       = 0
+        self.lives:       int   = PACMAN_LIVES
         self.won:         bool  = False
+        self.game_over:   bool  = False
         self.powered_up:  bool  = False
         self.power_timer: float = 0.0
+
+        # Ghost global mode cycle
+        self.ghost_mode:       str   = GHOST_SCATTER
+        self.ghost_mode_idx:   int   = 0
+        self.ghost_mode_timer: float = GHOST_MODE_SCHEDULE[0][1]
+        self.ghosts_eaten:     int   = 0
+
+        for ghost in self.ghosts:
+            ghost.reset()
 
     # ------------------------------------------------------------------
     @property
@@ -250,7 +513,7 @@ class GameState:
 
         requested_dir — direction currently held by the player.
         """
-        if self.won:
+        if self.won or self.game_over:
             return
 
         # Buffer direction request
@@ -312,6 +575,41 @@ class GameState:
             if self.power_timer <= 0.0:
                 self.powered_up = False
 
+        # ---- Ghost global mode cycle (paused while any ghost is frightened) ----
+        if not any(g.mode == GHOST_FRIGHTENED for g in self.ghosts):
+            self.ghost_mode_timer -= dt
+            if self.ghost_mode_timer <= 0.0:
+                self.ghost_mode_idx = min(
+                    self.ghost_mode_idx + 1, len(GHOST_MODE_SCHEDULE) - 1
+                )
+                self.ghost_mode, duration = GHOST_MODE_SCHEDULE[self.ghost_mode_idx]
+                self.ghost_mode_timer = duration
+                for g in self.ghosts:
+                    if g.mode not in (GHOST_WAITING, GHOST_DEAD, GHOST_FRIGHTENED):
+                        g.mode = self.ghost_mode
+
+        # ---- Update ghosts ----
+        for ghost in self.ghosts:
+            ghost.update(dt, self)
+
+        # ---- Pac-Man vs ghost collision ----
+        for ghost in self.ghosts:
+            if ghost.mode in (GHOST_WAITING, GHOST_DEAD):
+                continue
+            if ghost.tile != self.pacman_tile:
+                continue
+            if ghost.mode == GHOST_FRIGHTENED:
+                ghost.eat()
+                self.score       += GHOST_EAT_SCORES[min(self.ghosts_eaten, 3)]
+                self.ghosts_eaten += 1
+            else:
+                self.lives -= 1
+                if self.lives <= 0:
+                    self.game_over = True
+                else:
+                    self._respawn_pacman()
+                break
+
         # Win condition
         if not self.pellets_remaining and not self.energizers_remaining:
             self.won = True
@@ -325,8 +623,25 @@ class GameState:
         if tile in self.energizers_remaining:
             self.energizers_remaining.discard(tile)
             self.score += 50
-            self.powered_up  = True
-            self.power_timer = POWER_UP_DURATION
+            self.powered_up   = True
+            self.power_timer  = POWER_UP_DURATION
+            self.ghosts_eaten = 0
+            for ghost in self.ghosts:
+                ghost.frighten(POWER_UP_DURATION)
+
+    # ------------------------------------------------------------------
+    def _respawn_pacman(self):
+        """Reset Pac-Man to spawn without clearing pellets (lose a life)."""
+        self.pacman_tile           = PACMAN_START
+        self.pacman_target         = PACMAN_START
+        self.pacman_progress       = 0.0
+        self.pacman_dir            = DIR_NONE
+        self.pacman_next_dir       = DIR_NONE
+        self.pacman_moving         = False
+        self.pacman_tunnel_transit = False
+        self.mouth_phase           = 0.0
+        for ghost in self.ghosts:
+            ghost.reset()
 
 
 # ---------------------------------------------------------------------------
@@ -392,6 +707,10 @@ class GameRenderer:
         # Pac-Man
         self._draw_pacman(surface, state)
 
+        # Ghosts
+        for ghost in state.ghosts:
+            self._draw_ghost(surface, ghost)
+
         # HUD
         self._draw_hud(surface, state)
 
@@ -429,17 +748,113 @@ class GameRenderer:
             pygame.draw.polygon(surface, YELLOW, points)
 
     # ------------------------------------------------------------------
+    def _draw_ghost(self, surface: "pygame.Surface", ghost: GhostState):
+        """Draw a single ghost in its current mode/colour."""
+        t = self.t
+
+        if ghost.mode == GHOST_WAITING:
+            # Faint silhouette so the player sees where they will spawn
+            cx = ghost.tile[0] * t + t // 2
+            cy = ghost.tile[1] * t + t // 2
+            r  = max(4, t // 2 - 2)
+            dim = tuple(max(0, c - 160) for c in ghost.color)
+            self._ghost_body(surface, cx, cy, r, dim)
+            return
+
+        if ghost.mode == GHOST_DEAD:
+            cx = int(ghost.px * t + t // 2)
+            cy = int(ghost.py * t + t // 2)
+            r  = max(4, t // 2 - 2)
+            self._draw_ghost_eyes(surface, cx, cy, r, ghost.dir)
+            return
+
+        cx = int(ghost.px * t + t // 2)
+        cy = int(ghost.py * t + t // 2)
+        r  = max(4, t // 2 - 2)
+
+        if ghost.mode == GHOST_FRIGHTENED:
+            flash = (
+                ghost.fright_timer < GHOST_FRIGHT_FLASH_T
+                and int(ghost.fright_timer * 5) % 2 == 0
+            )
+            color = GHOST_FLASH_COL if flash else GHOST_FRIGHT_COL
+        else:
+            color = ghost.color
+
+        self._ghost_body(surface, cx, cy, r, color)
+
+        if ghost.mode == GHOST_FRIGHTENED:
+            # Two white eyes + squiggly mouth
+            eye_y = cy - r // 4
+            for ex in (cx - r // 3, cx + r // 3):
+                pygame.draw.circle(surface, GHOST_EYE_WHITE, (ex, eye_y), max(2, r // 5))
+            mouth_y = cy + r // 4
+            for i in range(4):
+                x0 = cx - r // 3 + i * (r // 6)
+                y0 = mouth_y + (0 if i % 2 == 0 else r // 8)
+                x1 = x0 + r // 6
+                y1 = mouth_y + (r // 8 if i % 2 == 0 else 0)
+                pygame.draw.line(surface, GHOST_EYE_WHITE, (x0, y0), (x1, y1), 1)
+        else:
+            self._draw_ghost_eyes(surface, cx, cy, r, ghost.dir)
+
+    def _ghost_body(
+        self,
+        surface: "pygame.Surface",
+        cx: int, cy: int, r: int,
+        color: Tuple,
+    ):
+        """Classic ghost silhouette: rounded head + rectangular body + wavy skirt."""
+        head_cy = cy - r // 4
+        pygame.draw.circle(surface, color, (cx, head_cy), r)
+        body_top = head_cy
+        body_h   = r + r // 2
+        pygame.draw.rect(surface, color, (cx - r, body_top, r * 2, body_h))
+        skirt_y = body_top + body_h
+        bump_r  = max(2, r // 3)
+        for bx in (cx - r + bump_r, cx, cx + r - bump_r):
+            pygame.draw.circle(surface, color, (bx, skirt_y), bump_r)
+
+    def _draw_ghost_eyes(
+        self,
+        surface: "pygame.Surface",
+        cx: int, cy: int, r: int,
+        direction: Tuple[int, int],
+    ):
+        """Sclera + iris pointing in the ghost's movement direction."""
+        eye_y    = cy - r // 2
+        sclera_r = max(2, r // 3)
+        iris_r   = max(1, r // 5)
+        dx = direction[0] if direction != DIR_NONE else 0
+        dy = direction[1] if direction != DIR_NONE else 0
+        for ex in (cx - r // 3, cx + r // 3):
+            pygame.draw.circle(surface, GHOST_EYE_WHITE, (ex, eye_y), sclera_r)
+            pygame.draw.circle(
+                surface, GHOST_EYE_IRIS,
+                (ex + dx * iris_r, eye_y + dy * iris_r),
+                iris_r,
+            )
+
+    # ------------------------------------------------------------------
     def _draw_hud(self, surface: "pygame.Surface", state: GameState):
-        w = self.meta["width"] * self.t
+        w = self.meta["width"]  * self.t
         h = self.meta["height"] * self.t
         font = pygame.font.SysFont("monospace", 18, bold=True)
 
         score_surf = font.render(f"SCORE  {state.score:>6}", True, WHITE)
         surface.blit(score_surf, (10, h + 8))
 
+        # Lives
+        lives_surf = font.render(f"LIVES  {state.lives}", True, YELLOW)
+        surface.blit(lives_surf, (w // 2 - 50, h + 8))
+
         if state.won:
             win_surf = font.render("YOU WIN!   R = restart", True, YELLOW)
             surface.blit(win_surf, (w // 2 - 110, h + 8))
+
+        if state.game_over:
+            go_surf = font.render("GAME OVER   R = restart", True, (255, 0, 0))
+            surface.blit(go_surf, (w // 2 - 120, h + 8))
 
         if state.powered_up:
             p_surf = font.render(
