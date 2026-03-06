@@ -98,15 +98,19 @@ GHOST_FRIGHT_SPEED:   float = 2.5
 GHOST_DEAD_DURATION:  float = 3.0   # seconds before respawn
 GHOST_FRIGHT_FLASH_T: float = 2.0   # seconds remaining when flashing starts
 
-GHOST_START_TILE:  Tuple[int, int] = (13, 11)  # above ghost door (y=11 corridor)
-GHOST_EAT_SCORES: List[int]        = [200, 400, 800, 1600]  # cumulative per power pellet
+GHOST_EAT_SCORES: List[int] = [200, 400, 800, 1600]  # cumulative per power pellet
 
-# Per-ghost config: (name, colour, scatter_corner, release_delay_s)
-GHOST_CONFIGS: List[Tuple[str, Tuple[int, int, int], Tuple[int, int], float]] = [
-    ("blinky", (255,   0,   0), (25,  0),  0.0),
-    ("pinky",  (255, 184, 255), ( 2,  0),  3.0),
-    ("inky",   (  0, 255, 255), (27, 30),  6.0),
-    ("clyde",  (255, 184,  82), ( 0, 30),  9.0),
+# Per-ghost config: (name, colour, scatter_corner, release_delay_s, start_tile)
+# start_tile is a walkable PATHBLANK tile inside or at the entrance of the ghost house.
+#   Blinky  — (13,11)  junction above the door; released immediately
+#   Pinky   — ( 9,12)  left side column, just inside
+#   Inky    — ( 9,14)  left side column, lower
+#   Clyde   — (18,12)  right side column, just inside
+GHOST_CONFIGS: List[Tuple[str, Tuple[int,int,int], Tuple[int,int], float, Tuple[int,int]]] = [
+    ("blinky", (255,   0,   0), (25,  0),  0.0, (13, 11)),
+    ("pinky",  (255, 184, 255), ( 2,  0),  3.0, ( 9, 12)),
+    ("inky",   (  0, 255, 255), (27, 30),  6.0, ( 9, 14)),
+    ("clyde",  (255, 184,  82), ( 0, 30),  9.0, (18, 12)),
 ]
 
 PACMAN_LIVES: int = 3
@@ -150,17 +154,19 @@ class GhostState:
         color: Tuple[int, int, int],
         scatter_corner: Tuple[int, int],
         release_delay: float,
+        start_tile: Tuple[int, int],
     ):
         self.name           = name
         self.color          = color
         self.scatter_corner = scatter_corner
         self.release_delay  = release_delay
+        self.start_tile     = start_tile
         self.reset()
 
     # ------------------------------------------------------------------
     def reset(self):
-        self.tile:           Tuple[int, int] = GHOST_START_TILE
-        self.target:         Tuple[int, int] = GHOST_START_TILE
+        self.tile:           Tuple[int, int] = self.start_tile
+        self.target:         Tuple[int, int] = self.start_tile
         self.progress:       float           = 0.0
         self.dir:            Tuple[int, int] = DIR_NONE
         self.moving:         bool            = False
@@ -396,8 +402,8 @@ class GameState:
 
         # Build ghost objects (topology-independent — reset() sets their state)
         self.ghosts: List[GhostState] = [
-            GhostState(name, color, corner, delay)
-            for name, color, corner, delay in GHOST_CONFIGS
+            GhostState(name, color, corner, delay, start)
+            for name, color, corner, delay, start in GHOST_CONFIGS
         ]
 
         self.score: int = 0
