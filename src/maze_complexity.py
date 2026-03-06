@@ -7,28 +7,23 @@ Problem type: Metric TSP Hamiltonian Path (NP-hard in general).
   We want the ordering of all food-tile nodes that minimises the total
   sum of BFS shortest-path distances between consecutive nodes.
 
-Algorithm tiers:
-  | Method            | Nodes | Optimality | Notes                             |
-  |-------------------|-------|------------|-----------------------------------|
-  | Held-Karp exact   | <=20  | EXACT      | O(2^n * n^2) DP                   |
-  | Greedy + 2-opt    | any   | ~1-5% sub  | Good practical approximation      |
-  | T-join / MST+match| any   | <=3/2 OPT  | Better THEORY bound, often worse  |
+Algorithm:
+  For <= 20 reachable nodes: exact Held-Karp DP (provably optimal).
+  For larger mazes, a multi-start local-search pipeline:
+    1. k greedy nearest-neighbour starts (first deterministic, rest randomised).
+    2. Each is refined with:
+         - Deterministic 2-opt scan (all pairs, repeat until convergence)
+         - Or-opt for chain lengths 1, 2, 3 (relocate + reverse, best-improvement)
+         - Another 2-opt scan (Or-opt can open new 2-opt gains)
+         - Random 3-opt segment-swap moves (escape deeper local optima)
+    3. The best result across all starts is returned.
 
-  Why greedy+2-opt beats T-join in practice:
-    The T-join (Christofides) minimises an EULERIAN CIRCUIT on the MST multigraph,
-    which visits nodes multiple times.  Greedy+2-opt directly optimises the
-    HAMILTONIAN PATH ordering (no revisits) — the correct formulation for our
-    problem — and achieves lower step counts on real Pac-Man mazes.
-
-  The MST weight is still a valid LOWER BOUND: optimal >= MST_weight.
+Lower bound:
+  The MST weight is a valid lower bound: true optimum >= MST_weight.
+  True optimum lies in [MST_weight, best_found].
 
 Score formula:
   score = (food_count / steps) * 10   (capped at 10, always in [0, 10])
-
-Visualization:
-  compute_path_for_visualization() returns the greedy+2-opt path order for
-  animation AND recomputes the Held-Karp exact path when <= 20 nodes.
-  The greedy lower-bound (MST weight) is also reported in debug output.
 """
 
 import argparse
@@ -168,154 +163,6 @@ def _prim_mst(
 
 
 # ---------------------------------------------------------------------------
-# Minimum Weight Perfect Matching
-# ---------------------------------------------------------------------------
-
-def _exact_matching_dp(odd_nodes: List[int], distances: List[List[int]]) -> int:
-    """Exact minimum weight perfect matching via bitmask DP. O(2^n * n)."""
-    n = len(odd_nodes)
-    INF = float("inf")
-    dp = [INF] * (1 << n)
-    dp[0] = 0
-    for mask in range(1 << n):
-        if dp[mask] == INF:
-            continue
-        first = next((i for i in range(n) if not (mask >> i & 1)), -1)
-        if first == -1:
-            continue
-        for second in range(first + 1, n):
-            if not (mask >> second & 1):
-                new_mask = mask | (1 << first) | (1 << second)
-                cost = distances[odd_nodes[first]][odd_nodes[second]]
-                if dp[mask] + cost < dp[new_mask]:
-                    dp[new_mask] = dp[mask] + cost
-    return int(dp[(1 << n) - 1])
-
-
-def _greedy_matching(odd_nodes: List[int], distances: List[List[int]]) -> int:
-    """Greedy nearest-neighbour matching for large odd sets (> 24)."""
-    remaining = set(odd_nodes)
-    total = 0
-    while remaining:
-        u = next(iter(remaining))
-        remaining.remove(u)
-        best = min(remaining, key=lambda v: distances[u][v])
-        total += distances[u][best]
-        remaining.remove(best)
-    return total
-
-
-def _min_weight_matching_with_pairs(
-    odd_nodes: List[int], distances: List[List[int]]
-) -> Tuple[int, List[Tuple[int, int]]]:
-    """
-    Minimum weight perfect matching returning (cost, list_of_pairs).
-    Exact DP for n <= 24, greedy otherwise.
-    """
-    n = len(odd_nodes)
-    assert n % 2 == 0
-    if n == 0:
-        return 0, []
-
-    if n > 24:
-        # Greedy — pairs only
-        remaining = list(range(n))
-        pairs = []
-        total = 0
-        while remaining:
-            i = remaining.pop(0)
-            best_j = min(remaining, key=lambda j: distances[odd_nodes[i]][odd_nodes[j]])
-            total += distances[odd_nodes[i]][odd_nodes[best_j]]
-            pairs.append((odd_nodes[i], odd_nodes[best_j]))
-            remaining.remove(best_j)
-        return total, pairs
-
-    INF = float("inf")
-    dp = [INF] * (1 << n)
-    came_from: List[Tuple[int, int, int]] = [(-1, -1, -1)] * (1 << n)  # (first, second, prev_mask)
-    dp[0] = 0
-    for mask in range(1 << n):
-        if dp[mask] == INF:
-            continue
-        first = next((i for i in range(n) if not (mask >> i & 1)), -1)
-        if first == -1:
-            continue
-        for second in range(first + 1, n):
-            if not (mask >> second & 1):
-                new_mask = mask | (1 << first) | (1 << second)
-                cost = distances[odd_nodes[first]][odd_nodes[second]]
-                if dp[mask] + cost < dp[new_mask]:
-                    dp[new_mask] = dp[mask] + cost
-                    came_from[new_mask] = (first, second, mask)
-    full_mask = (1 << n) - 1
-    pairs = []
-    m = full_mask
-    while m != 0:
-        fi, se, prev = came_from[m]
-        pairs.append((odd_nodes[fi], odd_nodes[se]))
-        m = prev
-    return int(dp[full_mask]), pairs
-
-
-def _min_weight_perfect_matching(odd_nodes: List[int], distances: List[List[int]]) -> int:
-    cost, _ = _min_weight_matching_with_pairs(odd_nodes, distances)
-    return cost
-
-
-# ---------------------------------------------------------------------------
-# T-join open walk — exact optimal open-walk length + edge set
-# ---------------------------------------------------------------------------
-
-def _compute_optimal_open_walk(
-    adjacency: List[List[int]],
-    distances: List[List[int]],
-    start_idx: int,
-    reachable: Set[int],
-) -> Tuple[int, List[Tuple[int, int]], List[Tuple[int, int]], int]:
-    """
-    Exact minimum steps for an OPEN walk from start visiting all nodes.
-
-    For a closed walk, we match ALL odd-degree MST nodes.
-    For an open walk (start → end), exactly {start, end} may have odd degree.
-    We pick endpoint E to minimise  MST_weight + matching(O ^ {start, E}),
-    where O is the odd-degree node set of the MST.
-
-    Returns (cost, mst_edges, matching_pairs, end_idx)
-    so the caller can reconstruct the Eulerian path for animation.
-    """
-    nodes = sorted(reachable)
-    if len(nodes) == 1:
-        return 0, [], [], start_idx
-
-    mst_edges, mst_weight = _prim_mst(distances, nodes)
-
-    degree = {n: 0 for n in nodes}
-    for u, v in mst_edges:
-        degree[u] += 1
-        degree[v] += 1
-    odd_set = frozenset(n for n in nodes if degree[n] % 2 == 1)
-
-    best_cost = float("inf")
-    best_end = start_idx
-    best_pairs: List[Tuple[int, int]] = []
-
-    for e in nodes:
-        if e == start_idx:
-            continue
-        to_match = sorted(odd_set ^ frozenset([start_idx, e]))
-        if len(to_match) % 2 != 0:
-            continue  # should never happen
-        cost, pairs = _min_weight_matching_with_pairs(to_match, distances)
-        total = mst_weight + cost
-        if total < best_cost:
-            best_cost = total
-            best_end = e
-            best_pairs = pairs
-
-    return int(best_cost), mst_edges, best_pairs, best_end
-
-
-# ---------------------------------------------------------------------------
 # Held-Karp exact open walk (for very small mazes, <= 20 nodes)
 # ---------------------------------------------------------------------------
 
@@ -370,41 +217,7 @@ def _held_karp_open(
 
 
 # ---------------------------------------------------------------------------
-# Eulerian path reconstruction
-# ---------------------------------------------------------------------------
-
-def _euler_path(
-    mst_edges: List[Tuple[int, int]],
-    matching_pairs: List[Tuple[int, int]],
-    start_idx: int,
-) -> List[int]:
-    """
-    Hierholzer's algorithm: find an Eulerian PATH on the multigraph
-    formed by MST edges + matching pairs.  Start = start_idx.
-    The multigraph is guaranteed to have exactly {start, end} as odd-degree nodes.
-    """
-    from collections import defaultdict
-    adj: Dict[int, List[int]] = defaultdict(list)
-    for u, v in mst_edges + matching_pairs:
-        adj[u].append(v)
-        adj[v].append(u)
-
-    path: List[int] = []
-    stack = [start_idx]
-    while stack:
-        v = stack[-1]
-        if adj[v]:
-            u = adj[v].pop()
-            adj[u].remove(v)
-            stack.append(u)
-        else:
-            path.append(stack.pop())
-    path.reverse()
-    return path
-
-
-# ---------------------------------------------------------------------------
-# Greedy + 2-opt helpers (used only for visualization path ordering)
+# Local search helpers
 # ---------------------------------------------------------------------------
 
 def _route_length(distances: List[List[int]], order: List[int]) -> int:
@@ -417,35 +230,208 @@ def _route_length(distances: List[List[int]], order: List[int]) -> int:
     return total
 
 
-def _greedy_order(distances: List[List[int]], start_idx: int, candidates: Set[int]) -> List[int]:
+def _greedy_order(
+    distances: List[List[int]],
+    start_idx: int,
+    candidates: Set[int],
+    seed: int = -1,
+) -> List[int]:
+    """
+    Nearest-neighbour greedy ordering.
+    seed >= 0: randomise among the 3 nearest at each step (diversification).
+    """
     remaining: Set[int] = set(candidates)
     remaining.discard(start_idx)
     order = [start_idx]
     current = start_idx
+    rng = _random.Random(seed) if seed >= 0 else None
     while remaining:
-        next_idx = min(remaining, key=lambda idx: distances[current][idx])
+        if rng is not None and len(remaining) >= 3:
+            top3 = sorted(remaining, key=lambda idx: distances[current][idx])[:3]
+            next_idx = rng.choice(top3)
+        else:
+            next_idx = min(remaining, key=lambda idx: distances[current][idx])
         order.append(next_idx)
         remaining.remove(next_idx)
         current = next_idx
     return order
 
 
-def _two_opt_improve(order: List[int], distances: List[List[int]], iterations: int) -> List[int]:
-    """2-opt local search to improve a greedy tour (for visualization only)."""
-    if iterations <= 0 or len(order) <= 3:
+def _two_opt_scan(order: List[int], distances: List[List[int]]) -> List[int]:
+    """
+    Deterministic 2-opt: scan ALL (i, j) edge pairs, reverse the segment on
+    improvement.  Repeats full passes until none improves.
+    """
+    n = len(order)
+    if n <= 3:
         return order
-    rng = _random.Random(0)
+    improved = True
+    while improved:
+        improved = False
+        for i in range(1, n - 1):
+            di_prev = distances[order[i - 1]]
+            di_cur = distances[order[i]]
+            for j in range(i + 1, n):
+                # delta = new_cost - old_cost
+                # old: (order[i-1]→order[i]) + (order[j]→order[j+1] if exists)
+                # new: (order[i-1]→order[j]) + (order[i]→order[j+1] if exists)
+                delta = di_prev[order[j]] - di_prev[order[i]]
+                if j + 1 < n:
+                    delta += di_cur[order[j + 1]] - distances[order[j]][order[j + 1]]
+                if delta < 0:
+                    order[i : j + 1] = order[i : j + 1][::-1]
+                    improved = True
+    return order
+
+
+def _or_opt_scan(order: List[int], distances: List[List[int]], chain_len: int) -> List[int]:
+    """
+    Or-opt: evaluate all relocations of every consecutive chain of *chain_len*
+    nodes to every other gap in the route (also reversed).  Uses best-improvement
+    strategy (pick the single best move, then restart scan).  The start node
+    (index 0) is never relocated.
+    """
+    n = len(order)
+    remaining_len = n - chain_len
+    if remaining_len < 1 or chain_len >= n:
+        return order
+
+    improved = True
+    while improved:
+        improved = False
+        best_delta = 0
+        best_i = best_j = -1
+        best_rev = False
+
+        for i in range(1, n - chain_len + 1):  # i >= 1: protect start
+            c_first = order[i]
+            c_last = order[i + chain_len - 1]
+            left_n = order[i - 1]
+            right_n = order[i + chain_len] if i + chain_len < n else None
+
+            r_save = distances[left_n][c_first]
+            if right_n is not None:
+                r_save += distances[c_last][right_n]
+                bridge = distances[left_n][right_n]
+            else:
+                bridge = 0
+            rem_delta = bridge - r_save  # net cost change from removing chain
+
+            for j in range(remaining_len):
+                # remaining[j] = order[j] if j < i else order[j + chain_len]
+                rj = order[j] if j < i else order[j + chain_len]
+                rj1_raw = j + 1
+                if rj1_raw < remaining_len:
+                    rj1: int | None = order[rj1_raw] if rj1_raw < i else order[rj1_raw + chain_len]
+                else:
+                    rj1 = None
+
+                gap = distances[rj][rj1] if rj1 is not None else 0
+
+                ins_fwd = (
+                    distances[rj][c_first]
+                    + (distances[c_last][rj1] if rj1 is not None else 0)
+                    - gap
+                )
+                ins_rev = (
+                    distances[rj][c_last]
+                    + (distances[c_first][rj1] if rj1 is not None else 0)
+                    - gap
+                )
+
+                for rev, ins_d in ((False, ins_fwd), (True, ins_rev)):
+                    d = rem_delta + ins_d
+                    if d < best_delta:
+                        best_delta = d
+                        best_i, best_j, best_rev = i, j, rev
+
+        if best_delta < 0:
+            improved = True
+            chain = order[best_i : best_i + chain_len]
+            if best_rev:
+                chain = chain[::-1]
+            remaining = order[:best_i] + order[best_i + chain_len :]
+            order = remaining[: best_j + 1] + chain + remaining[best_j + 1 :]
+
+    return order
+
+
+def _three_opt_random(
+    order: List[int], distances: List[List[int]], tries: int, seed: int = 0
+) -> List[int]:
+    """
+    Random 3-opt: sample *tries* random triples of cut positions and evaluate
+    all genuine 3-opt segment-swap reconnections (moves not reachable by 2-opt
+    or Or-opt alone).  Keeps any improvement found.
+    """
+    n = len(order)
+    if n < 6 or tries <= 0:
+        return order
+    rng = _random.Random(seed)
     best = order[:]
     best_len = _route_length(distances, best)
-    for _ in range(iterations):
-        i = rng.randint(1, len(best) - 2)
-        j = rng.randint(i + 1, len(best) - 1)
-        candidate = best[:i] + best[i:j + 1][::-1] + best[j + 1:]
-        candidate_len = _route_length(distances, candidate)
-        if candidate_len < best_len:
-            best = candidate
-            best_len = candidate_len
+
+    for _ in range(tries):
+        i, j, k = sorted(rng.sample(range(1, n), 3))
+        A, B, C, D = best[:i], best[i:j], best[j:k], best[k:]
+        # Genuine 3-opt reconnections (segment permutations/reversals)
+        for cand in (
+            A + C + B + D,             # swap B and C
+            A + C + B[::-1] + D,       # swap, reverse B
+            A + C[::-1] + B + D,       # swap, reverse C
+            A + B[::-1] + C[::-1] + D, # reverse both (double 2-opt)
+        ):
+            cand_len = _route_length(distances, cand)
+            if cand_len < best_len:
+                best = cand
+                best_len = cand_len
+
     return best
+
+
+def _full_local_search(
+    order: List[int], distances: List[List[int]], three_opt_tries: int
+) -> Tuple[int, List[int]]:
+    """
+    Full local-search pipeline applied to a single starting order:
+      1. Deterministic 2-opt scan  (to convergence)
+      2. Or-opt chain lengths 1, 2, 3  (best-improvement, to convergence each)
+      3. Another 2-opt scan  (Or-opt can open new 2-opt gains)
+      4. Random 3-opt  (escape remaining local optima)
+      5. Final 2-opt pass after any 3-opt moves
+    """
+    order = _two_opt_scan(order, distances)
+    for k in (1, 2, 3):
+        order = _or_opt_scan(order, distances, k)
+    order = _two_opt_scan(order, distances)
+    if three_opt_tries > 0:
+        order = _three_opt_random(order, distances, three_opt_tries)
+        order = _two_opt_scan(order, distances)
+    return _route_length(distances, order), order
+
+
+def _best_path(
+    distances: List[List[int]],
+    start_idx: int,
+    reachable: Set[int],
+    num_restarts: int,
+) -> Tuple[int, List[int]]:
+    """
+    Run *num_restarts* greedy starts (first deterministic, rest randomised)
+    each through the full local-search pipeline; return the best (steps, order).
+    """
+    n = len(reachable)
+    three_opt_tries = n * 20 if n >= 6 else 0
+    best_steps: int = -1
+    best_order: List[int] = []
+    for attempt in range(num_restarts):
+        seed = -1 if attempt == 0 else attempt
+        order = _greedy_order(distances, start_idx, reachable, seed=seed)
+        steps, order = _full_local_search(order, distances, three_opt_tries)
+        if best_steps < 0 or steps < best_steps:
+            best_steps = steps
+            best_order = order
+    return best_steps, best_order
 
 
 # ---------------------------------------------------------------------------
@@ -504,18 +490,16 @@ def compute_optimal_path(
         steps, _ = _held_karp_open(distances, start_idx, nodes)
         method = "held-karp-exact"
     else:
-        if food_count <= 10:
-            iters = food_count * 50
-        elif food_count <= 50:
-            iters = food_count * 30
+        if food_count <= 50:
+            num_restarts = 10
         elif food_count <= 100:
-            iters = food_count * 20
+            num_restarts = 8
+        elif food_count <= 200:
+            num_restarts = 5
         else:
-            iters = food_count * 10
-        order = _greedy_order(distances, start_idx, reachable)
-        order = _two_opt_improve(order, distances, iters)
-        steps = _route_length(distances, order)
-        method = "greedy-2opt"
+            num_restarts = 3
+        steps, _ = _best_path(distances, start_idx, reachable, num_restarts)
+        method = "ms-or3opt"
 
     return steps, {
         "width": width,
@@ -552,18 +536,16 @@ def compute_path_for_visualization(
         steps, order = _held_karp_open(distances, start_idx, nodes)
         method = "held-karp-exact"
     else:
-        if food_count <= 10:
-            iters = food_count * 50
-        elif food_count <= 50:
-            iters = food_count * 30
+        if food_count <= 50:
+            num_restarts = 10
         elif food_count <= 100:
-            iters = food_count * 20
+            num_restarts = 8
+        elif food_count <= 200:
+            num_restarts = 5
         else:
-            iters = food_count * 10
-        order = _greedy_order(distances, start_idx, reachable)
-        order = _two_opt_improve(order, distances, iters)
-        steps = _route_length(distances, order)
-        method = "greedy-2opt"
+            num_restarts = 3
+        steps, order = _best_path(distances, start_idx, reachable, num_restarts)
+        method = "ms-or3opt"
 
     path_positions = _expand_node_order(adjacency, pos_list, order)
     if not path_positions:
@@ -626,7 +608,7 @@ def main() -> int:
         description="Compute maze complexity score (open walk) and store it in maze.json",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Default: greedy nearest-neighbour + 2-opt (best practical approximation for large mazes).
+Default: multi-start greedy + Or-opt(1,2,3) + random 3-opt (best practical approximation).
 For mazes with <= 20 reachable nodes: Held-Karp gives the provably exact optimum.
 The MST weight is always reported as a lower bound on the true optimal.
         """,
