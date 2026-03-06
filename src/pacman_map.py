@@ -943,22 +943,16 @@ class PacmanMap:
         height = len(tile_map[0])
         width = len(tile_map)
         
-        # Tile type names — ENERGIZER is kept distinct for pellet rendering
+        # Simplified tile type names (no pellet/energizer distinction)
         tile_type_names = {
             Tile.BLANK: "BLANK",
             Tile.PATH: "PATH",
             Tile.PATHBLANK: "PATHBLANK",
             Tile.WALL: "WALL",
             Tile.GHOSTWALL: "GHOSTWALL",
-            Tile.ENERGIZER: "ENERGIZER",
+            Tile.ENERGIZER: "PATH",  # Treat energizers as regular paths
             Tile.GHOSTSPACE: "GHOSTSPACE"
         }
-
-        # Ghost-house surround zone — no pellets here
-        GHOST_ZONE_X = (9, 18)
-        GHOST_ZONE_Y = (10, 16)
-        # Pac-Man spawn — no pellet on the start tile
-        PACMAN_START = (13, 23)
         
         # Step 2: Identify all tiles with their types
         nodes: Dict[str, Dict] = {}  # id -> {id, x, y, type}
@@ -1010,45 +1004,18 @@ class PacmanMap:
         # Step 4: Convert edge set to list
         edges = [{"from": edge[0], "to": edge[1]} for edge in edges_set]
         
-        # Step 5: Compute pellet positions
-        # Pellets on every PATH tile except:
-        #   - ghost-house surround zone  (x in [9,18], y in [10,16])
-        #   - tunnel tiles               (x == 0 or x == width-1)
-        #   - Pac-Man spawn tile         (13, 23)
-        # Power pellets on every ENERGIZER tile (no zone restrictions needed).
-        pellets = []
-        power_pellets = []
-        for node in nodes.values():
-            nx, ny = node["x"], node["y"]
-            if node["type"] == "ENERGIZER":
-                power_pellets.append({"x": nx, "y": ny})
-            elif node["type"] == "PATH":
-                in_ghost_zone = (
-                    GHOST_ZONE_X[0] <= nx <= GHOST_ZONE_X[1]
-                    and GHOST_ZONE_Y[0] <= ny <= GHOST_ZONE_Y[1]
-                )
-                is_tunnel = nx == 0 or nx == width - 1
-                is_spawn = (nx, ny) == PACMAN_START
-                if not in_ghost_zone and not is_tunnel and not is_spawn:
-                    pellets.append({"x": nx, "y": ny})
-
-        # Step 6: Build JSON structure
+        # Step 5: Build JSON structure
         graph_json = {
             "metadata": {
                 "width": width,
                 "height": height,
                 "node_count": len(nodes),
                 "edge_count": len(edges),
-                "pacman_start": {"x": PACMAN_START[0], "y": PACMAN_START[1]},
-                "pellet_count": len(pellets),
-                "power_pellet_count": len(power_pellets),
             },
             "nodes": list(nodes.values()),
             "edges": edges,
             "walls": walls,
             "ghost_walls": ghost_walls,
-            "pellets": pellets,
-            "power_pellets": power_pellets,
         }
         
         # Optional: save to file
