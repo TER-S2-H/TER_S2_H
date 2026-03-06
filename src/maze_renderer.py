@@ -60,13 +60,61 @@ class MazeRenderer:
         image = Image.new('RGB', (width, height), self.background_color)
         draw = ImageDraw.Draw(image)
         
-        # Draw each tile
-        for i in range(len(tile_map)):
-            for j in range(len(tile_map[0])):
-                self._draw_tile(draw, tile_map[i][j], 
-                              i * self.tile_size, 
-                              j * self.tile_size)
-        
+        ts = self.tile_size
+        tile_width = len(tile_map)
+        tile_height = len(tile_map[0])
+
+        # Ghost-house surround zone — same constants used for pellet export
+        GHOST_ZONE_X = (9, 18)
+        GHOST_ZONE_Y = (10, 16)
+        PACMAN_START = (13, 23)
+        PELLET_COLOR = (255, 255, 184)        # warm yellow-white
+        POWER_PELLET_COLOR = (255, 255, 255)  # bright white
+        PACMAN_COLOR = (255, 255, 0)          # yellow
+
+        # Draw each tile (walls, ghost walls)
+        for i in range(tile_width):
+            for j in range(tile_height):
+                self._draw_tile(draw, tile_map[i][j],
+                                i * ts, j * ts)
+
+        # Second pass: pellets, power pellets, Pac-Man
+        for i in range(tile_width):
+            for j in range(tile_height):
+                state = tile_map[i][j].state
+                cx = i * ts + ts // 2
+                cy = j * ts + ts // 2
+
+                if state == Tile.ENERGIZER:
+                    r = max(3, ts // 5)
+                    draw.ellipse(
+                        [cx - r, cy - r, cx + r, cy + r],
+                        fill=POWER_PELLET_COLOR,
+                    )
+                elif state == Tile.PATH:
+                    in_ghost_zone = (
+                        GHOST_ZONE_X[0] <= i <= GHOST_ZONE_X[1]
+                        and GHOST_ZONE_Y[0] <= j <= GHOST_ZONE_Y[1]
+                    )
+                    is_tunnel = i == 0 or i == tile_width - 1
+                    is_spawn = (i, j) == PACMAN_START
+                    if not in_ghost_zone and not is_tunnel and not is_spawn:
+                        r = max(1, ts // 10)
+                        draw.ellipse(
+                            [cx - r, cy - r, cx + r, cy + r],
+                            fill=PELLET_COLOR,
+                        )
+
+        # Draw Pac-Man at spawn position
+        margin = max(2, ts // 8)
+        px = PACMAN_START[0] * ts + margin
+        py = PACMAN_START[1] * ts + margin
+        draw.pieslice(
+            [px, py, px + ts - 2 * margin, py + ts - 2 * margin],
+            start=30, end=330,
+            fill=PACMAN_COLOR,
+        )
+
         return image
     
     def _draw_tile(self, draw: ImageDraw.ImageDraw, tile, x: int, y: int):

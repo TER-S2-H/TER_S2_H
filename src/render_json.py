@@ -84,6 +84,37 @@ class JSONMazeRenderer:
                 fill=self.ghost_wall_color
             )
         
+        # Draw pellets (small warm-yellow dots)
+        PELLET_COLOR = (255, 255, 184)
+        POWER_PELLET_COLOR = (255, 255, 255)
+        PACMAN_COLOR = (255, 255, 0)
+
+        for pellet in maze_data.get("pellets", []):
+            cx = pellet["x"] * self.tile_size + self.tile_size // 2
+            cy = pellet["y"] * self.tile_size + self.tile_size // 2
+            r = max(1, self.tile_size // 10)
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=PELLET_COLOR)
+
+        # Draw power pellets (large bright circles)
+        for pp in maze_data.get("power_pellets", []):
+            cx = pp["x"] * self.tile_size + self.tile_size // 2
+            cy = pp["y"] * self.tile_size + self.tile_size // 2
+            r = max(3, self.tile_size // 5)
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=POWER_PELLET_COLOR)
+
+        # Draw Pac-Man at spawn
+        ps = maze_data.get("metadata", {}).get("pacman_start")
+        if ps:
+            ts = self.tile_size
+            margin = max(2, ts // 8)
+            px = ps["x"] * ts + margin
+            py = ps["y"] * ts + margin
+            draw.pieslice(
+                [px, py, px + ts - 2 * margin, py + ts - 2 * margin],
+                start=30, end=330,
+                fill=PACMAN_COLOR,
+            )
+
         # Optionally draw graph visualization
         if show_graph:
             # Draw edges first (so they appear behind nodes)
@@ -171,11 +202,13 @@ def main():
     maze_data = renderer.load_json(args.json_file)
     
     if args.verbose:
-        print(f"Maze size: {maze_data['metadata']['width']}x{maze_data['metadata']['height']}")
-        print(f"Nodes: {maze_data['metadata']['node_count']}")
-        print(f"Edges: {maze_data['metadata']['edge_count']}")
-        print(f"Walls: {maze_data['metadata']['wall_count']}")
-        print(f"Ghost walls: {maze_data['metadata']['ghost_wall_count']}")
+        meta = maze_data['metadata']
+        print(f"Maze size: {meta['width']}x{meta['height']}")
+        print(f"Nodes: {meta['node_count']}")
+        print(f"Edges: {meta['edge_count']}")
+        print(f"Pellets: {meta.get('pellet_count', len(maze_data.get('pellets', [])))}")
+        print(f"Power pellets: {meta.get('power_pellet_count', len(maze_data.get('power_pellets', [])))}")
+        print(f"Pac-Man start: {meta.get('pacman_start')}")
         print(f"Rendering to: {output_file}")
     
     renderer.render_to_file(maze_data, output_file, show_graph=args.show_graph)
