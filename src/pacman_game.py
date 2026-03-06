@@ -151,22 +151,36 @@ class GameState:
         self.pellets_remaining: Set[Tuple[int, int]]    = set(self.pellets)
         self.energizers_remaining: Set[Tuple[int, int]] = set(self.energizers)
 
-        # Pac-Man sub-tile position (float tiles)
-        self.pacman_px: float = float(PACMAN_START[0])
-        self.pacman_py: float = float(PACMAN_START[1])
-        self.pacman_tile: Tuple[int, int] = PACMAN_START
-        self.pacman_dir: Tuple[int, int] = DIR_NONE
+        # Tile-progress movement model:
+        #   pacman_tile     — tile Pac-Man is currently leaving (or resting on)
+        #   pacman_target   — tile Pac-Man is moving toward (== pacman_tile if stopped)
+        #   pacman_progress — 0.0 (at pacman_tile) → 1.0 (arrived at pacman_target)
+        self.pacman_tile:     Tuple[int, int] = PACMAN_START
+        self.pacman_target:   Tuple[int, int] = PACMAN_START
+        self.pacman_progress: float           = 0.0
+        self.pacman_dir:      Tuple[int, int] = DIR_NONE
         self.pacman_next_dir: Tuple[int, int] = DIR_NONE
-        self.pacman_moving: bool = False
+        self.pacman_moving:   bool            = False
 
         # Animation
-        self.mouth_phase: float = 0.0   # radians, drives mouth open/close
+        self.mouth_phase: float = 0.0
 
         # State flags
-        self.score = 0
-        self.won:       bool  = False
-        self.powered_up: bool = False
+        self.score      = 0
+        self.won:         bool  = False
+        self.powered_up:  bool  = False
         self.power_timer: float = 0.0
+
+    # ------------------------------------------------------------------
+    @property
+    def pacman_px(self) -> float:
+        """Interpolated x position in tile coordinates."""
+        return self.pacman_tile[0] + (self.pacman_target[0] - self.pacman_tile[0]) * self.pacman_progress
+
+    @property
+    def pacman_py(self) -> float:
+        """Interpolated y position in tile coordinates."""
+        return self.pacman_tile[1] + (self.pacman_target[1] - self.pacman_tile[1]) * self.pacman_progress
 
     # ------------------------------------------------------------------
     def _can_move(
@@ -184,8 +198,11 @@ class GameState:
         """
         Advance the game by dt seconds.
 
-        requested_dir  — direction currently held by the player (DIR_NONE if none).
-        Subclasses / callers can pass ghost updates separately after calling super().
+        Uses a tile-progress model: Pac-Man slides from pacman_tile to
+        pacman_target over (1 / PACMAN_SPEED) seconds.  Direction changes
+        are applied only at tile boundaries — no floating-point drift.
+
+        requested_dir — direction currently held by the player.
         """
         if self.won:
             return
@@ -194,33 +211,53 @@ class GameState:
         if requested_dir != DIR_NONE:
             self.pacman_next_dir = requested_dir
 
-        # Check whether Pac-Man is close enough to a tile centre to steer
-        tx = int(round(self.pacman_px))
-        ty = int(round(self.pacman_py))
-        near_centre = abs(self.pacman_px - tx) < 0.15 and abs(self.pacman_py - ty) < 0.15
+        if self.pacman_moving:
+            # Advance progress
+            self.pacman_progress += PACMAN_SPEED * dt
 
-        if near_centre:
-            self.pacman_tile = (tx, ty)
-            # Snap to exact centre to avoid floating-point drift
-            self.pacman_px = float(tx)
-            self.pacman_py = float(ty)
+            if self.pacman_progress >= 1.0:
+                # Arrived at target tile
+                self.pacman_tile     = self.pacman_target
+                self.pacman_progress = 0.0
 
-            # Try buffered direction first, then current direction
-            self.pacman_moving = False
+                # Eat pellet / energizer on arrival
+                self._eat(self.pacman_tile)
+
+                # Try buffered direction, then current direction
+                moved = False
+                for d in (self.pacman_next_dir, self.pacman_dir):
+                    if d != DIR_NONE and self._can_move(self.pacman_tile, d):
+                        if d == self.pacman_next_dir:
+                            self.pacman_next_dir = DIR_NONE
+                        self.pacman_dir    = d
+                        self.pacman_target = (
+                            self.pacman_tile[0] + d[0],
+                            self.pacman_tile[1] + d[1],
+                        )
+                        self.pacman_progress = 0.0
+                        moved = True
+                        break
+
+                if not moved:
+                    self.pacman_moving = False
+                    self.pacman_target = self.pacman_tile
+
+        else:
+            # Stopped — try to start moving with buffered or current direction
             for d in (self.pacman_next_dir, self.pacman_dir):
                 if d != DIR_NONE and self._can_move(self.pacman_tile, d):
                     if d == self.pacman_next_dir:
                         self.pacman_next_dir = DIR_NONE
-                    self.pacman_dir = d
-                    self.pacman_moving = True
+                    self.pacman_dir    = d
+                    self.pacman_target = (
+                        self.pacman_tile[0] + d[0],
+                        self.pacman_tile[1] + d[1],
+                    )
+                    self.pacman_progress = 0.0
+                    self.pacman_moving   = True
                     break
 
-        # Move
-        if self.pacman_moving and self.pacman_dir != DIR_NONE:
-            self.pacman_px += self.pacman_dir[0] * PACMAN_SPEED * dt
-            self.pacman_py += self.pacman_dir[1] * PACMAN_SPEED * dt
-
-        # Animate mouth
+        # Mouth animation
         if self.pacman_moving:
             self.mouth_phase = (self.mouth_phase + dt * 6.0) % (2 * math.pi)
         else:
@@ -232,20 +269,21 @@ class GameState:
             if self.power_timer <= 0.0:
                 self.powered_up = False
 
-        # Eat pellets / energizers at current tile
-        tile: Tuple[int, int] = (int(round(self.pacman_px)), int(round(self.pacman_py)))
+        # Win condition
+        if not self.pellets_remaining and not self.energizers_remaining:
+            self.won = True
+
+    # ------------------------------------------------------------------
+    def _eat(self, tile: Tuple[int, int]):
+        """Consume any pellet or energizer on tile."""
         if tile in self.pellets_remaining:
             self.pellets_remaining.discard(tile)
             self.score += 10
         if tile in self.energizers_remaining:
             self.energizers_remaining.discard(tile)
             self.score += 50
-            self.powered_up = True
+            self.powered_up  = True
             self.power_timer = POWER_UP_DURATION
-
-        # Win condition
-        if not self.pellets_remaining and not self.energizers_remaining:
-            self.won = True
 
 
 # ---------------------------------------------------------------------------
