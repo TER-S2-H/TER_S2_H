@@ -429,9 +429,11 @@ class GameState:
         for edge in maze_data["edges"]:
             a: Tuple[int, int] = tuple(int(v) for v in edge["from"].split(","))  # type: ignore
             b: Tuple[int, int] = tuple(int(v) for v in edge["to"].split(","))    # type: ignore
-            if a in self.neighbors:
+            # Only register the edge when both endpoints are walkable tiles;
+            # edges that touch wall/GHOSTSPACE nodes are discarded so ghosts
+            # (and Pac-Man) cannot navigate into non-walkable cells.
+            if a in self.neighbors and b in self.neighbors:
                 self.neighbors[a].add(b)
-            if b in self.neighbors:
                 self.neighbors[b].add(a)
 
         # Rows where both the left edge (x=0) and right edge (x=width-1) are walkable
