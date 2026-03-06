@@ -76,10 +76,14 @@ GHOST_EYE_IRIS    = (  0,   0, 200)
 
 # Ghost modes
 GHOST_WAITING    = "waiting"      # pre-release, frozen at start tile
+GHOST_EXITING    = "exiting"      # released — navigating to corridor exit
 GHOST_SCATTER    = "scatter"      # retreat to assigned corner
 GHOST_CHASE      = "chase"        # use targeting algorithm
 GHOST_FRIGHTENED = "frightened"   # random turns, blue
 GHOST_DEAD       = "dead"         # eaten — brief pause then respawn
+
+# Tile the ghost must reach when exiting the house (centre of the y=11 corridor)
+GHOST_EXIT_TILE: Tuple[int, int] = (13, 11)
 
 # Global scatter/chase schedule [(mode, duration_s)] — last entry repeats
 GHOST_MODE_SCHEDULE: List[Tuple[str, float]] = [
@@ -180,8 +184,8 @@ class GhostState:
         self.wait_timer:     float           = self.release_delay
         self.fright_timer:   float           = 0.0
         self.dead_timer:     float           = 0.0
-        # Patrol direction used while waiting inside the ghost house
-        self.patrol_dir:     Tuple[int, int] = DIR_DOWN
+        # Patrol direction used while waiting inside the ghost house (left/right)
+        self.patrol_dir:     Tuple[int, int] = DIR_LEFT
 
     # ------------------------------------------------------------------
     @property
@@ -195,7 +199,7 @@ class GhostState:
     # ------------------------------------------------------------------
     def frighten(self, duration: float):
         """Enter frightened mode (power pellet eaten by Pac-Man)."""
-        if self.mode in (GHOST_WAITING, GHOST_DEAD):
+        if self.mode in (GHOST_WAITING, GHOST_EXITING, GHOST_DEAD):
             return
         # Force reversal — swap tile↔target and invert progress
         if self.moving and self.dir != DIR_NONE:
@@ -215,7 +219,7 @@ class GhostState:
     def update(self, dt: float, state: "GameState"):
         if self.mode == GHOST_WAITING:
             self.wait_timer -= dt
-            # Patrol up/down inside the house while counting down
+            # Patrol left/right inside the house while counting down
             if self.moving:
                 self.progress += GHOST_FRIGHT_SPEED * dt
                 if self.progress >= 1.0:
@@ -224,19 +228,36 @@ class GhostState:
                     self._patrol(state)
             else:
                 self._patrol(state)
-            # Release: switch to main mode and navigate out
+            # Release: enter exiting mode to navigate up through the door
             if self.wait_timer <= 0.0:
-                self.mode = state.ghost_mode
-                self._start_moving(state)
+                self.mode = GHOST_EXITING
+                self._exit_house(state)
+            return
+
+        if self.mode == GHOST_EXITING:
+            speed = GHOST_SPEED
+            if self.moving:
+                self.progress += speed * dt
+                if self.progress >= 1.0:
+                    self.tile     = self.target
+                    self.progress = 0.0
+                    # Reached corridor — start normal scatter/chase
+                    if self.tile[1] <= GHOST_EXIT_TILE[1]:
+                        self.mode = state.ghost_mode
+                        self._start_moving(state)
+                    else:
+                        self._exit_house(state)
+            else:
+                self._exit_house(state)
             return
 
         if self.mode == GHOST_DEAD:
             self.dead_timer -= dt
             if self.dead_timer <= 0.0:
                 self.reset()
-                self.mode       = state.ghost_mode
+                self.mode       = GHOST_EXITING
                 self.wait_timer = 0.0
-                self._start_moving(state)
+                self._exit_house(state)
             return
 
         if self.mode == GHOST_FRIGHTENED:
@@ -257,7 +278,7 @@ class GhostState:
 
     # ------------------------------------------------------------------
     def _patrol(self, state: "GameState"):
-        """Bounce up/down within the ghost house interior while waiting."""
+        """Bounce left/right within the ghost house interior while waiting."""
         for attempt in range(2):
             nb = state._target_tile(self.tile, self.patrol_dir)
             if (state._can_move(self.tile, self.patrol_dir, ghost=True)
@@ -267,9 +288,17 @@ class GhostState:
                 self.progress = 0.0
                 self.moving   = True
                 return
-            # Hit boundary — reverse and try again
+            # Hit boundary — reverse
             self.patrol_dir = (-self.patrol_dir[0], -self.patrol_dir[1])
         self.moving = False
+
+    def _exit_house(self, state: "GameState"):
+        """Navigate step-by-step toward GHOST_EXIT_TILE using ghost_neighbors."""
+        d = self._choose_dir(self.tile, GHOST_EXIT_TILE, DIR_NONE, state, ghost_nav=True)
+        if d != DIR_NONE:
+            self._commit(d, state)
+        else:
+            self.moving = False
 
     def _start_moving(self, state: "GameState"):
         """Choose first direction and begin moving."""
@@ -286,9 +315,9 @@ class GhostState:
         if self.mode == GHOST_FRIGHTENED:
             options = [
                 d for d in (DIR_UP, DIR_LEFT, DIR_DOWN, DIR_RIGHT)
-                if d != reverse and state._can_move(self.tile, d, ghost=True)
+                if d != reverse and state._can_move(self.tile, d)
             ]
-            if not options and reverse != DIR_NONE and state._can_move(self.tile, reverse, ghost=True):
+            if not options and reverse != DIR_NONE and state._can_move(self.tile, reverse):
                 options = [reverse]
             if options:
                 self._commit(random.choice(options), state)
@@ -297,7 +326,7 @@ class GhostState:
         else:
             target = self._get_target(state)
             d      = self._choose_dir(self.tile, target, reverse, state)
-            if d == DIR_NONE and reverse != DIR_NONE and state._can_move(self.tile, reverse, ghost=True):
+            if d == DIR_NONE and reverse != DIR_NONE and state._can_move(self.tile, reverse):
                 d = reverse          # dead end — reverse
             if d != DIR_NONE:
                 self._commit(d, state)
@@ -317,18 +346,20 @@ class GhostState:
         target:    Tuple[int, int],
         forbidden: Tuple[int, int],
         state:     "GameState",
+        ghost_nav: bool = False,
     ) -> Tuple[int, int]:
         """
         Classic ghost direction selection.
         Priority when distances tie: UP > LEFT > DOWN > RIGHT.
         Never choose the forbidden (reverse) direction.
+        ghost_nav=True uses ghost_neighbors (for exiting the house).
         """
         best_dir  = DIR_NONE
         best_dist = float("inf")
         for d in (DIR_UP, DIR_LEFT, DIR_DOWN, DIR_RIGHT):
             if d == forbidden:
                 continue
-            if not state._can_move(from_tile, d, ghost=True):
+            if not state._can_move(from_tile, d, ghost=ghost_nav):
                 continue
             nb   = state._target_tile(from_tile, d)
             dist = (nb[0] - target[0]) ** 2 + (nb[1] - target[1]) ** 2
@@ -651,7 +682,7 @@ class GameState:
                 self.ghost_mode, duration = GHOST_MODE_SCHEDULE[self.ghost_mode_idx]
                 self.ghost_mode_timer = duration
                 for g in self.ghosts:
-                    if g.mode not in (GHOST_WAITING, GHOST_DEAD, GHOST_FRIGHTENED):
+                    if g.mode not in (GHOST_WAITING, GHOST_EXITING, GHOST_DEAD, GHOST_FRIGHTENED):
                         g.mode = self.ghost_mode
 
         # ---- Update ghosts ----
@@ -660,7 +691,7 @@ class GameState:
 
         # ---- Pac-Man vs ghost collision ----
         for ghost in self.ghosts:
-            if ghost.mode in (GHOST_WAITING, GHOST_DEAD):
+            if ghost.mode in (GHOST_WAITING, GHOST_EXITING, GHOST_DEAD):
                 continue
             if ghost.tile != self.pacman_tile:
                 continue
@@ -825,6 +856,15 @@ class GameRenderer:
             r  = max(4, t // 2 - 2)
             dim = tuple(max(0, c - 160) for c in ghost.color)
             self._ghost_body(surface, cx, cy, r, dim)
+            return
+
+        # GHOST_EXITING — full colour, eyes pointing upward toward door
+        if ghost.mode == GHOST_EXITING:
+            cx = int(ghost.px * t + t // 2)
+            cy = int(ghost.py * t + t // 2)
+            r  = max(4, t // 2 - 2)
+            self._ghost_body(surface, cx, cy, r, ghost.color)
+            self._draw_ghost_eyes(surface, cx, cy, r, ghost.dir)
             return
 
         if ghost.mode == GHOST_DEAD:
