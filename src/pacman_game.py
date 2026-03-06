@@ -100,18 +100,22 @@ GHOST_FRIGHT_FLASH_T: float = 2.0   # seconds remaining when flashing starts
 
 GHOST_EAT_SCORES: List[int] = [200, 400, 800, 1600]  # cumulative per power pellet
 
+# Ghost house bounding-box corners (as given by maze design)
+# Walls are 1-tile thick, so the interior space is 1 tile inside on all sides.
+GHOST_HOUSE_TL: Tuple[int, int] = (10, 11)   # top-left  corner
+GHOST_HOUSE_BR: Tuple[int, int] = (17, 15)   # bottom-right corner
+# Interior: x = TL.x+1 .. BR.x-1,  y = TL.y+1 .. BR.y-1  →  x=11..16, y=12..14
+
 # Per-ghost config: (name, colour, scatter_corner, release_delay_s, start_tile)
-# The only walkable tiles strictly inside the ghost house corners
-# (10,11)-(17,15) are on the y=11 corridor — ghosts spread across it.
-#   Blinky  (13,11)  centre, above door — exits immediately
-#   Pinky   (11,11)  left quarter
-#   Inky    (14,11)  right of centre
-#   Clyde   (17,11)  right corner
+#   Blinky  (13,11)  on the y=11 corridor above the door — exits immediately
+#   Pinky   (13,13)  interior centre — patrols up/down before release
+#   Inky    (11,13)  interior left   — patrols up/down before release
+#   Clyde   (16,13)  interior right  — patrols up/down before release
 GHOST_CONFIGS: List[Tuple[str, Tuple[int,int,int], Tuple[int,int], float, Tuple[int,int]]] = [
     ("blinky", (255,   0,   0), (25,  0),  0.0, (13, 11)),
-    ("pinky",  (255, 184, 255), ( 2,  0),  3.0, (11, 11)),
-    ("inky",   (  0, 255, 255), (27, 30),  6.0, (14, 11)),
-    ("clyde",  (255, 184,  82), ( 0, 30),  9.0, (17, 11)),
+    ("pinky",  (255, 184, 255), ( 2,  0),  3.0, (13, 13)),
+    ("inky",   (  0, 255, 255), (27, 30),  6.0, (11, 13)),
+    ("clyde",  (255, 184,  82), ( 0, 30),  9.0, (16, 13)),
 ]
 
 PACMAN_LIVES: int = 3
@@ -176,6 +180,8 @@ class GhostState:
         self.wait_timer:     float           = self.release_delay
         self.fright_timer:   float           = 0.0
         self.dead_timer:     float           = 0.0
+        # Patrol direction used while waiting inside the ghost house
+        self.patrol_dir:     Tuple[int, int] = DIR_DOWN
 
     # ------------------------------------------------------------------
     @property
@@ -209,6 +215,16 @@ class GhostState:
     def update(self, dt: float, state: "GameState"):
         if self.mode == GHOST_WAITING:
             self.wait_timer -= dt
+            # Patrol up/down inside the house while counting down
+            if self.moving:
+                self.progress += GHOST_FRIGHT_SPEED * dt
+                if self.progress >= 1.0:
+                    self.tile     = self.target
+                    self.progress = 0.0
+                    self._patrol(state)
+            else:
+                self._patrol(state)
+            # Release: switch to main mode and navigate out
             if self.wait_timer <= 0.0:
                 self.mode = state.ghost_mode
                 self._start_moving(state)
@@ -240,6 +256,21 @@ class GhostState:
             self._start_moving(state)
 
     # ------------------------------------------------------------------
+    def _patrol(self, state: "GameState"):
+        """Bounce up/down within the ghost house interior while waiting."""
+        for attempt in range(2):
+            nb = state._target_tile(self.tile, self.patrol_dir)
+            if (state._can_move(self.tile, self.patrol_dir, ghost=True)
+                    and nb in state.ghost_interior):
+                self.dir      = self.patrol_dir
+                self.target   = nb
+                self.progress = 0.0
+                self.moving   = True
+                return
+            # Hit boundary — reverse and try again
+            self.patrol_dir = (-self.patrol_dir[0], -self.patrol_dir[1])
+        self.moving = False
+
     def _start_moving(self, state: "GameState"):
         """Choose first direction and begin moving."""
         t  = self._get_target(state)
@@ -255,9 +286,9 @@ class GhostState:
         if self.mode == GHOST_FRIGHTENED:
             options = [
                 d for d in (DIR_UP, DIR_LEFT, DIR_DOWN, DIR_RIGHT)
-                if d != reverse and state._can_move(self.tile, d)
+                if d != reverse and state._can_move(self.tile, d, ghost=True)
             ]
-            if not options and reverse != DIR_NONE and state._can_move(self.tile, reverse):
+            if not options and reverse != DIR_NONE and state._can_move(self.tile, reverse, ghost=True):
                 options = [reverse]
             if options:
                 self._commit(random.choice(options), state)
@@ -266,7 +297,7 @@ class GhostState:
         else:
             target = self._get_target(state)
             d      = self._choose_dir(self.tile, target, reverse, state)
-            if d == DIR_NONE and reverse != DIR_NONE and state._can_move(self.tile, reverse):
+            if d == DIR_NONE and reverse != DIR_NONE and state._can_move(self.tile, reverse, ghost=True):
                 d = reverse          # dead end — reverse
             if d != DIR_NONE:
                 self._commit(d, state)
@@ -297,7 +328,7 @@ class GhostState:
         for d in (DIR_UP, DIR_LEFT, DIR_DOWN, DIR_RIGHT):
             if d == forbidden:
                 continue
-            if not state._can_move(from_tile, d):
+            if not state._can_move(from_tile, d, ghost=True):
                 continue
             nb   = state._target_tile(from_tile, d)
             dist = (nb[0] - target[0]) ** 2 + (nb[1] - target[1]) ** 2
@@ -401,6 +432,29 @@ class GameState:
         # All other candidates are normal pellets
         self.pellets: Set[Tuple[int, int]] = set(remaining)
 
+        # ---- Ghost house interior -----------------------------------------------
+        # These tiles are solid walls for Pac-Man but freely navigable by ghosts.
+        tl_x, tl_y = GHOST_HOUSE_TL
+        br_x, br_y = GHOST_HOUSE_BR
+        self.ghost_interior: FrozenSet[Tuple[int, int]] = frozenset(
+            (x, y)
+            for x in range(tl_x + 1, br_x)   # x = 11..16
+            for y in range(tl_y + 1, br_y)    # y = 12..14
+        )
+        # Ghost-only adjacency = normal neighbours + interior grid + corridor edges
+        ghost_all = self.walkable | self.ghost_interior
+        self.ghost_neighbors: Dict[Tuple[int, int], Set[Tuple[int, int]]] = {
+            p: set(self.neighbors.get(p, set())) for p in ghost_all
+        }
+        for (x, y) in self.ghost_interior:
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nb = (x + dx, y + dy)
+                if nb in ghost_all:
+                    self.ghost_neighbors[(x, y)].add(nb)
+                    if nb not in self.ghost_neighbors:
+                        self.ghost_neighbors[nb] = set()
+                    self.ghost_neighbors[nb].add((x, y))
+
         # Build ghost objects (topology-independent — reset() sets their state)
         self.ghosts: List[GhostState] = [
             GhostState(name, color, corner, delay, start)
@@ -469,14 +523,19 @@ class GameState:
 
     # ------------------------------------------------------------------
     def _can_move(
-        self, tile: Tuple[int, int], direction: Tuple[int, int]
+        self, tile: Tuple[int, int], direction: Tuple[int, int], ghost: bool = False
     ) -> bool:
-        """True when moving in direction from tile lands on a walkable tile."""
+        """True when moving in *direction* from *tile* is permitted.
+
+        ghost=True uses the ghost-only adjacency map which includes the
+        house interior; ghost=False (default) uses the Pac-Man graph.
+        """
+        nbrs = self.ghost_neighbors if ghost else self.neighbors
         neighbor: Tuple[int, int] = (
             tile[0] + direction[0],
             tile[1] + direction[1],
         )
-        if neighbor in self.neighbors.get(tile, set()):
+        if neighbor in nbrs.get(tile, set()):
             return True
         # Tunnel wrap: left edge moving left, or right edge moving right
         if direction == (-1, 0) and tile[0] == 0 and tile[1] in self.tunnel_rows:
