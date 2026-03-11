@@ -717,7 +717,8 @@ def compute_complexity_score(
     trap_corridors, longest_trap, num_traps = find_trap_corridors(pos_list, adjacency)
 
     # 5.7 Compute new score
-    s_traversal = food_count / steps if steps > 0 else 1.0
+    # s_traversal is inverted: high food/steps ratio = easy sweep = low difficulty
+    s_traversal = 1.0 - (food_count / steps if steps > 0 else 1.0)
     s_trap_len  = min(longest_trap / MAX_TRAP_LEN,  1.0)
     s_trap_cnt  = min(num_traps    / MAX_NUM_TRAPS, 1.0)
     s_turns     = min(num_turns    / MAX_TURNS,     1.0)
