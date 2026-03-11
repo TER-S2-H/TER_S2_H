@@ -25,6 +25,9 @@ from src.maze_complexity import (
     _expand_node_order,
     count_turns,
     find_trap_corridors,
+    MIN_TRAVERSAL, MAX_TRAVERSAL,
+    MAX_TRAP_LEN, MAX_NUM_TRAPS, MAX_TURNS,
+    W_TRAVERSAL, W_TRAP_LEN, W_TRAP_CNT, W_TURNS,
 )
 
 START: tuple = (13, 23)
@@ -67,6 +70,17 @@ def _analyse_maze(seed: int) -> dict | None:
         num_turns = count_turns(path_positions)
         _, longest_trap, num_traps = find_trap_corridors(pos_list, adjacency)
 
+        # Normalized signals (same formula as compute_complexity_score)
+        raw_ratio   = food_count / steps if steps > 0 else MIN_TRAVERSAL
+        s_traversal = (raw_ratio - MIN_TRAVERSAL) / (MAX_TRAVERSAL - MIN_TRAVERSAL)
+        s_traversal = 1.0 - max(0.0, min(s_traversal, 1.0))
+        s_trap_len  = min(longest_trap / MAX_TRAP_LEN,  1.0)
+        s_trap_cnt  = min(num_traps    / MAX_NUM_TRAPS, 1.0)
+        s_turns     = min(num_turns    / MAX_TURNS,     1.0)
+        raw   = (W_TRAVERSAL * s_traversal + W_TRAP_LEN * s_trap_len
+                 + W_TRAP_CNT * s_trap_cnt + W_TURNS * s_turns)
+        score = min(raw * 10, 10.0)
+
         return {
             "seed":         seed,
             "food_count":   food_count,
@@ -74,6 +88,11 @@ def _analyse_maze(seed: int) -> dict | None:
             "longest_trap": longest_trap,
             "num_traps":    num_traps,
             "num_turns":    num_turns,
+            "s_traversal":  s_traversal,
+            "s_trap_len":   s_trap_len,
+            "s_trap_cnt":   s_trap_cnt,
+            "s_turns":      s_turns,
+            "score":        score,
         }
     except Exception as e:
         print(f"  [seed {seed}] scoring failed: {e}", file=sys.stderr)
@@ -115,13 +134,14 @@ def _stats(values: list[float]) -> dict:
     }
 
 
-def _print_stats(label: str, values: list[float], current_cap: int | None = None) -> None:
+def _print_stats(label: str, values: list[float], current_cap: int | None = None, fmt: str = ".1f") -> None:
     s = _stats(values)
+    f = fmt
     print(f"\n  {label}")
-    print(f"    n={s['n']}  min={s['min']:.1f}  max={s['max']:.1f}  "
-          f"mean={s['mean']:.1f}  std={s['std']:.1f}")
-    print(f"    p25={s['p25']:.1f}  p50={s['p50']:.1f}  p75={s['p75']:.1f}  "
-          f"p90={s['p90']:.1f}  p95={s['p95']:.1f}  p99={s['p99']:.1f}")
+    print(f"    n={s['n']}  min={s['min']:{f}}  max={s['max']:{f}}  "
+          f"mean={s['mean']:{f}}  std={s['std']:{f}}")
+    print(f"    p25={s['p25']:{f}}  p50={s['p50']:{f}}  p75={s['p75']:{f}}  "
+          f"p90={s['p90']:{f}}  p95={s['p95']:{f}}  p99={s['p99']:{f}}")
     if current_cap is not None:
         pct_below = 100 * sum(1 for v in values if v <= current_cap) / len(values)
         print(f"    current cap={current_cap}  →  {pct_below:.1f}% of mazes are at or below it")
@@ -154,18 +174,50 @@ def main() -> int:
 
     print(f"\n{len(results)}/{args.n} mazes scored successfully.")
 
-    longest_traps = [r["longest_trap"] for r in results]
-    num_traps_lst = [r["num_traps"]    for r in results]
-    num_turns_lst = [r["num_turns"]    for r in results]
+    longest_traps  = [r["longest_trap"] for r in results]
+    num_traps_lst  = [r["num_traps"]    for r in results]
+    num_turns_lst  = [r["num_turns"]    for r in results]
+    s_traversal_l  = [r["s_traversal"]  for r in results]
+    s_trap_len_l   = [r["s_trap_len"]   for r in results]
+    s_trap_cnt_l   = [r["s_trap_cnt"]   for r in results]
+    s_turns_l      = [r["s_turns"]      for r in results]
+    scores         = [r["score"]        for r in results]
 
     print("\n" + "=" * 60)
-    print("  SIGNAL DISTRIBUTIONS")
+    print("  RAW SIGNAL DISTRIBUTIONS")
     print("=" * 60)
-
-    from src.maze_complexity import MAX_TRAP_LEN, MAX_NUM_TRAPS, MAX_TURNS
     _print_stats("longest_trap", longest_traps, MAX_TRAP_LEN)
     _print_stats("num_traps",    num_traps_lst,  MAX_NUM_TRAPS)
     _print_stats("num_turns",    num_turns_lst,  MAX_TURNS)
+
+    print("\n" + "=" * 60)
+    print("  NORMALISED SIGNAL DISTRIBUTIONS  (all should span [0, 1])")
+    print("=" * 60)
+    _print_stats("s_traversal  (w=0.25)", s_traversal_l, fmt=".3f")
+    _print_stats("s_trap_len   (w=0.25)", s_trap_len_l,  fmt=".3f")
+    _print_stats("s_trap_cnt   (w=0.25)", s_trap_cnt_l,  fmt=".3f")
+    _print_stats("s_turns      (w=0.25)", s_turns_l,     fmt=".3f")
+
+    print("\n" + "=" * 60)
+    print("  FINAL SCORE DISTRIBUTION  (range 0–10)")
+    print("=" * 60)
+    _print_stats("score", scores, fmt=".3f")
+
+    # Variance summary table
+    print("\n" + "=" * 60)
+    print("  VARIANCE SUMMARY")
+    print("=" * 60)
+    print(f"  {'signal':<22}  {'mean':>6}  {'std':>6}  {'var':>8}  {'min':>6}  {'max':>6}")
+    print(f"  {'-'*22}  {'-'*6}  {'-'*6}  {'-'*8}  {'-'*6}  {'-'*6}")
+    for label, vals in [
+        ("s_traversal",  s_traversal_l),
+        ("s_trap_len",   s_trap_len_l),
+        ("s_trap_cnt",   s_trap_cnt_l),
+        ("s_turns",      s_turns_l),
+        ("score (/10)",  scores),
+    ]:
+        st = _stats(vals)
+        print(f"  {label:<22}  {st['mean']:>6.3f}  {st['std']:>6.3f}  {st['std']**2:>8.4f}  {st['min']:>6.3f}  {st['max']:>6.3f}")
 
     print("\n" + "=" * 60)
     print("  SUGGESTED CAPS (rounded up to nearest integer)")
