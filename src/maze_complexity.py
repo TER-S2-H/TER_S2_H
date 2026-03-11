@@ -684,7 +684,6 @@ def compute_complexity_score(
 
     # 5.2 BFS distances once
     distances = _bfs_all_pairs(adjacency)
-    _, mst_weight = _prim_mst(distances, nodes)
 
     # 5.3 Compute optimal path
     if force_held_karp or food_count <= 20:
@@ -731,17 +730,13 @@ def compute_complexity_score(
 
     # 5.8 Return updated dict
     return {
-        "start":           {"x": start[0], "y": start[1]},
-        "food_count":      food_count,
-        "steps":           steps,
-        "score":           round(score, 4),
-        "method":          method,
-        "mst_lower_bound": mst_weight,
-        "wrap_tunnels":    wrap_tunnels,
-        "width":           width,
-        "height":          height,
+        "start":        {"x": start[0], "y": start[1]},
+        "steps":        steps,
+        "score":        round(score, 4),
+        "method":       method,
+        "wrap_tunnels": wrap_tunnels,
         # New keys
-        "longest_trap":    longest_trap,
+        "longest_trap": longest_trap,
         "num_traps":       num_traps,
         "num_turns":       num_turns,
         "s_traversal":     round(s_traversal, 6),
@@ -778,7 +773,6 @@ def main() -> int:
         epilog="""
 Default: multi-start greedy + Or-opt(1,2,3) + random 3-opt (best practical approximation).
 For mazes with <= 20 reachable nodes: Held-Karp gives the provably exact optimum.
-The MST weight is always reported as a lower bound on the true optimal.
         """,
     )
     parser.add_argument("maze_json", help="Path to maze.json")
@@ -807,12 +801,10 @@ The MST weight is always reported as a lower bound on the true optimal.
     if args.verbose:
         score = updated.get("metadata", {}).get("complexity_score", {})
         print(
-            "Complexity score: %s (steps: %s, food: %s, mst_lb: %s, method: %s)"
+            "Complexity score: %s (steps: %s, method: %s)"
             % (
                 score.get("score"),
                 score.get("steps"),
-                score.get("food_count"),
-                score.get("mst_lower_bound"),
                 score.get("method"),
             )
         )
