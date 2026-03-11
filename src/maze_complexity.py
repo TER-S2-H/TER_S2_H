@@ -38,10 +38,10 @@ Position = Tuple[int, int]
 # Module-level constants for score normalisation and weighting
 # ---------------------------------------------------------------------------
 
-# 95th-percentile empirical caps from the 28x31 fixed maze grid
-MAX_TRAP_LEN:  int   = 15    # longest plausible interior corridor length
-MAX_NUM_TRAPS: int   = 10    # 95th-percentile trap count across generated mazes
-MAX_TURNS:     int   = 400   # 95th-percentile turn count across generated mazes
+# 95th-percentile caps derived from 500 generated mazes (28×31 grid)
+MAX_TRAP_LEN:  int   = 22    # longest plausible interior corridor length
+MAX_NUM_TRAPS: int   = 67    # 95th-percentile trap count across generated mazes
+MAX_TURNS:     int   = 112   # 95th-percentile turn count across generated mazes
 
 # Combination weights — must sum to 1.0
 W_TRAVERSAL: float = 0.25
