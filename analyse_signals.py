@@ -29,7 +29,7 @@ from src.maze_complexity import (
     MIN_TRAP_LEN,  MAX_TRAP_LEN,
     MIN_NUM_TRAPS, MAX_NUM_TRAPS,
     MIN_TURNS,     MAX_TURNS,
-    W_TRAVERSAL, W_TRAP_LEN, W_TRAP_CNT, W_TURNS,
+    W_TRAP_LEN, W_TRAP_CNT, W_TURNS,
 )
 
 START: tuple = (13, 23)
@@ -82,8 +82,7 @@ def _analyse_maze(seed: int) -> dict | None:
         s_trap_cnt  = max(0.0, min(s_trap_cnt,  1.0))
         s_turns     = (num_turns    - MIN_TURNS)     / (MAX_TURNS     - MIN_TURNS)
         s_turns     = max(0.0, min(s_turns,     1.0))
-        raw   = (W_TRAVERSAL * s_traversal + W_TRAP_LEN * s_trap_len
-                 + W_TRAP_CNT * s_trap_cnt + W_TURNS * s_turns)
+        raw   = (W_TRAP_LEN * s_trap_len + W_TRAP_CNT * s_trap_cnt + W_TURNS * s_turns)
         score = min(raw * 10, 10.0)
 
         return {

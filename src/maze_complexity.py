@@ -53,13 +53,12 @@ MAX_TURNS:     int   = 112   # p95 of num_turns distribution
 MIN_TRAVERSAL: float = 0.729  # p5  of food_count/steps distribution
 MAX_TRAVERSAL: float = 0.828  # p95 of food_count/steps distribution
 
-# Combination weights — must sum to 1.0
-W_TRAVERSAL: float = 0.25
-W_TRAP_LEN:  float = 0.25
-W_TRAP_CNT:  float = 0.25
-W_TURNS:     float = 0.25
+# Combination weights (traversal is kept in JSON but excluded from score)
+W_TRAP_LEN: float = 1 / 3
+W_TRAP_CNT: float = 1 / 3
+W_TURNS:    float = 1 / 3
 
-assert W_TRAVERSAL + W_TRAP_LEN + W_TRAP_CNT + W_TURNS == 1.0, (
+assert abs(W_TRAP_LEN + W_TRAP_CNT + W_TURNS - 1.0) < 1e-9, (
     "Score weights must sum to 1.0"
 )
 
@@ -739,10 +738,9 @@ def compute_complexity_score(
     s_turns     = (num_turns    - MIN_TURNS)     / (MAX_TURNS     - MIN_TURNS)
     s_turns     = max(0.0, min(s_turns,     1.0))
 
-    raw   = (W_TRAVERSAL * s_traversal
-             + W_TRAP_LEN  * s_trap_len
-             + W_TRAP_CNT  * s_trap_cnt
-             + W_TURNS     * s_turns)
+    raw   = (W_TRAP_LEN * s_trap_len
+             + W_TRAP_CNT * s_trap_cnt
+             + W_TURNS   * s_turns)
     score = min(raw * 10, 10.0)
 
     # 5.8 Return updated dict
