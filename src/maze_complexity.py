@@ -34,6 +34,25 @@ from typing import Deque, Dict, List, Set, Tuple
 
 Position = Tuple[int, int]
 
+# ---------------------------------------------------------------------------
+# Module-level constants for score normalisation and weighting
+# ---------------------------------------------------------------------------
+
+# 95th-percentile empirical caps from the 28x31 fixed maze grid
+MAX_TRAP_LEN:  int   = 15    # longest plausible interior corridor length
+MAX_NUM_TRAPS: int   = 10    # 95th-percentile trap count across generated mazes
+MAX_TURNS:     int   = 400   # 95th-percentile turn count across generated mazes
+
+# Combination weights — must sum to 1.0
+W_TRAVERSAL: float = 0.25
+W_TRAP_LEN:  float = 0.25
+W_TRAP_CNT:  float = 0.25
+W_TURNS:     float = 0.25
+
+assert W_TRAVERSAL + W_TRAP_LEN + W_TRAP_CNT + W_TURNS == 1.0, (
+    "Score weights must sum to 1.0"
+)
+
 
 def _parse_node_id(node_id: str) -> Position:
     x_str, y_str = node_id.split(",")
@@ -435,6 +454,90 @@ def _best_path(
 
 
 # ---------------------------------------------------------------------------
+# New signal helpers
+# ---------------------------------------------------------------------------
+
+
+def count_turns(path_positions: List[Position]) -> int:
+    """Count direction changes in a tile-position sequence (O(P))."""
+    turns = 0
+    for i in range(1, len(path_positions) - 1):
+        dx0 = path_positions[i][0] - path_positions[i - 1][0]
+        dy0 = path_positions[i][1] - path_positions[i - 1][1]
+        dx1 = path_positions[i + 1][0] - path_positions[i][0]
+        dy1 = path_positions[i + 1][1] - path_positions[i][1]
+        if (dx0, dy0) != (dx1, dy1):
+            turns += 1
+    return turns
+
+
+def find_trap_corridors(
+    pos_list: List[Position],
+    adjacency: List[List[int]],
+) -> Tuple[List[List[Position]], int, int]:
+    """Find all valid trap corridors in the maze graph (O(N)).
+
+    A trap corridor is a maximal chain of degree-2 interior nodes bounded at
+    both ends by a distinct junction node of degree >= 3.
+
+    Returns:
+        corridors  -- list of corridors, each as [(x,y), ...] from v0 to vn
+        longest    -- interior node count of the longest corridor (0 if none)
+        num_traps  -- count of valid corridors
+    """
+    n = len(pos_list)
+    degree = [len(adjacency[i]) for i in range(n)]
+    visited = [False] * n
+    corridors: List[List[Position]] = []
+    longest = 0
+
+    for seed in range(n):
+        if degree[seed] != 2 or visited[seed]:
+            continue
+
+        # Mark seed visited so loop-detection works
+        visited[seed] = True
+
+        # Walk in the direction of neighbor 0 (left arm)
+        chain_left: List[int] = []
+        prev, cur = seed, adjacency[seed][0]
+        while degree[cur] == 2 and not visited[cur]:
+            visited[cur] = True
+            chain_left.append(cur)
+            nxt = adjacency[cur][0] if adjacency[cur][1] == prev else adjacency[cur][1]
+            prev, cur = cur, nxt
+        v_left = cur  # boundary node (degree >= 3, or visited if loop)
+
+        # Walk in the direction of neighbor 1 (right arm)
+        chain_right: List[int] = []
+        prev, cur = seed, adjacency[seed][1]
+        while degree[cur] == 2 and not visited[cur]:
+            visited[cur] = True
+            chain_right.append(cur)
+            nxt = adjacency[cur][0] if adjacency[cur][1] == prev else adjacency[cur][1]
+            prev, cur = cur, nxt
+        v_right = cur  # boundary node
+
+        # Interior = chain_left reversed + seed + chain_right
+        interior = list(reversed(chain_left)) + [seed] + chain_right
+
+        # Validity filters
+        if degree[v_left] < 3 or degree[v_right] < 3:
+            continue
+        if v_left == v_right:
+            continue  # loop — same junction on both sides
+
+        # Record corridor as position list from v0 to vn inclusive
+        corridor_indices = [v_left] + interior + [v_right]
+        corridors.append([pos_list[i] for i in corridor_indices])
+        interior_len = len(interior)
+        if interior_len > longest:
+            longest = interior_len
+
+    return corridors, longest, len(corridors)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -567,20 +670,85 @@ def compute_complexity_score(
     wrap_tunnels: bool,
     force_held_karp: bool = False,
 ) -> Dict:
-    steps, debug = compute_optimal_path(maze_data, start, wrap_tunnels, force_held_karp)
-    food_count = debug["food_count"]
-    score = (food_count / steps * 10) if steps > 0 else 10.0
-    score = min(10.0, score)
+    # 5.1 Build graph once
+    pos_list, adjacency, width, height = _build_graph(maze_data, wrap_tunnels)
+    pos_to_idx = {pos: i for i, pos in enumerate(pos_list)}
+
+    if start not in pos_to_idx:
+        raise ValueError("Start position %s is not walkable in this maze" % (start,))
+
+    start_idx = pos_to_idx[start]
+    reachable = _reachable_indices(adjacency, start_idx)
+    food_count = len(reachable)
+    nodes = sorted(reachable)
+
+    # 5.2 BFS distances once
+    distances = _bfs_all_pairs(adjacency)
+    _, mst_weight = _prim_mst(distances, nodes)
+
+    # 5.3 Compute optimal path
+    if force_held_karp or food_count <= 20:
+        if food_count > 20:
+            raise ValueError(
+                "Held-Karp requires <= 20 nodes, got %d. Remove --held-karp flag." % food_count
+            )
+        steps, order = _held_karp_open(distances, start_idx, nodes)
+        method = "held-karp-exact"
+    else:
+        if food_count <= 50:
+            num_restarts = 10
+        elif food_count <= 100:
+            num_restarts = 8
+        elif food_count <= 200:
+            num_restarts = 5
+        else:
+            num_restarts = 3
+        steps, order = _best_path(distances, start_idx, reachable, num_restarts)
+        method = "ms-or3opt"
+
+    # 5.4 Expand path to tile positions
+    path_positions = _expand_node_order(adjacency, pos_list, order)
+    if not path_positions:
+        path_positions = [start]
+
+    # 5.5 Count turns
+    num_turns = count_turns(path_positions)
+
+    # 5.6 Find trap corridors
+    trap_corridors, longest_trap, num_traps = find_trap_corridors(pos_list, adjacency)
+
+    # 5.7 Compute new score
+    s_traversal = food_count / steps if steps > 0 else 1.0
+    s_trap_len  = min(longest_trap / MAX_TRAP_LEN,  1.0)
+    s_trap_cnt  = min(num_traps    / MAX_NUM_TRAPS, 1.0)
+    s_turns     = min(num_turns    / MAX_TURNS,     1.0)
+
+    raw   = (W_TRAVERSAL * s_traversal
+             + W_TRAP_LEN  * s_trap_len
+             + W_TRAP_CNT  * s_trap_cnt
+             + W_TURNS     * s_turns)
+    score = min(raw * 10, 10.0)
+
+    # 5.8 Return updated dict
     return {
-        "start": {"x": start[0], "y": start[1]},
-        "food_count": food_count,
-        "steps": steps,
-        "score": round(score, 2),
-        "method": debug["method"],
-        "mst_lower_bound": debug["mst_lower_bound"],
-        "wrap_tunnels": wrap_tunnels,
-        "width": debug["width"],
-        "height": debug["height"],
+        "start":           {"x": start[0], "y": start[1]},
+        "food_count":      food_count,
+        "steps":           steps,
+        "score":           round(score, 4),
+        "method":          method,
+        "mst_lower_bound": mst_weight,
+        "wrap_tunnels":    wrap_tunnels,
+        "width":           width,
+        "height":          height,
+        # New keys
+        "longest_trap":    longest_trap,
+        "num_traps":       num_traps,
+        "num_turns":       num_turns,
+        "s_traversal":     round(s_traversal, 6),
+        "s_trap_len":      round(s_trap_len,  6),
+        "s_trap_cnt":      round(s_trap_cnt,  6),
+        "s_turns":         round(s_turns,     6),
+        "trap_corridors":  trap_corridors,
     }
 
 
