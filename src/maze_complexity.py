@@ -38,10 +38,14 @@ Position = Tuple[int, int]
 # Module-level constants for score normalisation and weighting
 # ---------------------------------------------------------------------------
 
-# 95th-percentile caps derived from 500 generated mazes (28×31 grid)
-MAX_TRAP_LEN:  int   = 22    # longest plausible interior corridor length
-MAX_NUM_TRAPS: int   = 67    # 95th-percentile trap count across generated mazes
-MAX_TURNS:     int   = 112   # 95th-percentile turn count across generated mazes
+# 5th/95th-percentile bounds derived from 500 generated mazes (28×31 grid)
+# Each signal is normalised as: clamp((raw - MIN) / (MAX - MIN), 0, 1)
+MIN_TRAP_LEN:  int   = 13    # p5  of longest_trap distribution
+MAX_TRAP_LEN:  int   = 22    # p95 of longest_trap distribution
+MIN_NUM_TRAPS: int   = 46    # p5  of num_traps distribution
+MAX_NUM_TRAPS: int   = 67    # p95 of num_traps distribution
+MIN_TURNS:     int   = 86    # p5  of num_turns distribution
+MAX_TURNS:     int   = 112   # p95 of num_turns distribution
 
 # Traversal ratio (food_count/steps) range from 500-maze analysis (greedy path)
 # p5  → easy traversal lower bound (hard mazes have low ratio)
@@ -723,14 +727,17 @@ def compute_complexity_score(
     trap_corridors, longest_trap, num_traps = find_trap_corridors(pos_list, adjacency)
 
     # 5.7 Compute new score
-    # Normalise traversal ratio into [0,1] using p5/p95 bounds, then invert
-    # (low ratio = hard = high difficulty signal)
+    # All four signals normalised via p5/p95 min-max, then clamped to [0, 1].
+    # Inversion where needed so all signals are high=hard.
     raw_ratio   = food_count / steps if steps > 0 else MIN_TRAVERSAL
-    s_traversal = (raw_ratio - MIN_TRAVERSAL) / (MAX_TRAVERSAL - MIN_TRAVERSAL)
-    s_traversal = 1.0 - max(0.0, min(s_traversal, 1.0))
-    s_trap_len  = min(longest_trap / MAX_TRAP_LEN,  1.0)
-    s_trap_cnt  = min(num_traps    / MAX_NUM_TRAPS, 1.0)
-    s_turns     = min(num_turns    / MAX_TURNS,     1.0)
+    s_traversal = (raw_ratio   - MIN_TRAVERSAL) / (MAX_TRAVERSAL - MIN_TRAVERSAL)
+    s_traversal = 1.0 - max(0.0, min(s_traversal, 1.0))   # invert: low ratio = hard
+    s_trap_len  = (longest_trap - MIN_TRAP_LEN)  / (MAX_TRAP_LEN  - MIN_TRAP_LEN)
+    s_trap_len  = max(0.0, min(s_trap_len,  1.0))
+    s_trap_cnt  = (num_traps    - MIN_NUM_TRAPS) / (MAX_NUM_TRAPS - MIN_NUM_TRAPS)
+    s_trap_cnt  = max(0.0, min(s_trap_cnt,  1.0))
+    s_turns     = (num_turns    - MIN_TURNS)     / (MAX_TURNS     - MIN_TURNS)
+    s_turns     = max(0.0, min(s_turns,     1.0))
 
     raw   = (W_TRAVERSAL * s_traversal
              + W_TRAP_LEN  * s_trap_len

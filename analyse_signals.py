@@ -26,7 +26,9 @@ from src.maze_complexity import (
     count_turns,
     find_trap_corridors,
     MIN_TRAVERSAL, MAX_TRAVERSAL,
-    MAX_TRAP_LEN, MAX_NUM_TRAPS, MAX_TURNS,
+    MIN_TRAP_LEN,  MAX_TRAP_LEN,
+    MIN_NUM_TRAPS, MAX_NUM_TRAPS,
+    MIN_TURNS,     MAX_TURNS,
     W_TRAVERSAL, W_TRAP_LEN, W_TRAP_CNT, W_TURNS,
 )
 
@@ -72,11 +74,14 @@ def _analyse_maze(seed: int) -> dict | None:
 
         # Normalized signals (same formula as compute_complexity_score)
         raw_ratio   = food_count / steps if steps > 0 else MIN_TRAVERSAL
-        s_traversal = (raw_ratio - MIN_TRAVERSAL) / (MAX_TRAVERSAL - MIN_TRAVERSAL)
+        s_traversal = (raw_ratio   - MIN_TRAVERSAL) / (MAX_TRAVERSAL - MIN_TRAVERSAL)
         s_traversal = 1.0 - max(0.0, min(s_traversal, 1.0))
-        s_trap_len  = min(longest_trap / MAX_TRAP_LEN,  1.0)
-        s_trap_cnt  = min(num_traps    / MAX_NUM_TRAPS, 1.0)
-        s_turns     = min(num_turns    / MAX_TURNS,     1.0)
+        s_trap_len  = (longest_trap - MIN_TRAP_LEN)  / (MAX_TRAP_LEN  - MIN_TRAP_LEN)
+        s_trap_len  = max(0.0, min(s_trap_len,  1.0))
+        s_trap_cnt  = (num_traps    - MIN_NUM_TRAPS) / (MAX_NUM_TRAPS - MIN_NUM_TRAPS)
+        s_trap_cnt  = max(0.0, min(s_trap_cnt,  1.0))
+        s_turns     = (num_turns    - MIN_TURNS)     / (MAX_TURNS     - MIN_TURNS)
+        s_turns     = max(0.0, min(s_turns,     1.0))
         raw   = (W_TRAVERSAL * s_traversal + W_TRAP_LEN * s_trap_len
                  + W_TRAP_CNT * s_trap_cnt + W_TURNS * s_turns)
         score = min(raw * 10, 10.0)
@@ -220,17 +225,20 @@ def main() -> int:
         print(f"  {label:<22}  {st['mean']:>6.3f}  {st['std']:>6.3f}  {st['std']**2:>8.4f}  {st['min']:>6.3f}  {st['max']:>6.3f}")
 
     print("\n" + "=" * 60)
-    print("  SUGGESTED CAPS (rounded up to nearest integer)")
+    print("  SUGGESTED CAPS (p5/p95, rounded to nearest integer)")
     print("=" * 60)
-    for label, values, current in (
-        ("MAX_TRAP_LEN  (p95)", longest_traps, MAX_TRAP_LEN),
-        ("MAX_NUM_TRAPS (p95)", num_traps_lst,  MAX_NUM_TRAPS),
-        ("MAX_TURNS     (p95)", num_turns_lst,  MAX_TURNS),
+    for label, vals, cur_min, cur_max in (
+        ("longest_trap", longest_traps, MIN_TRAP_LEN,  MAX_TRAP_LEN),
+        ("num_traps",    num_traps_lst,  MIN_NUM_TRAPS, MAX_NUM_TRAPS),
+        ("num_turns",    num_turns_lst,  MIN_TURNS,     MAX_TURNS),
     ):
-        p95 = _percentile(values, 95)
-        suggested = max(1, int(p95) + (1 if p95 % 1 else 0))
-        marker = "  ← UNCHANGED" if suggested == current else f"  ← was {current}"
-        print(f"    {label}:  p95={p95:.1f}  →  {suggested}{marker}")
+        p5  = _percentile(vals, 5)
+        p95 = _percentile(vals, 95)
+        sug_min = int(p5)
+        sug_max = max(sug_min + 1, int(p95) + (1 if p95 % 1 else 0))
+        m_marker = "" if sug_min == cur_min else f"  ← was {cur_min}"
+        M_marker = "" if sug_max == cur_max else f"  ← was {cur_max}"
+        print(f"    {label}: MIN={sug_min}{m_marker}  MAX={sug_max}{M_marker}")
 
     return 0
 
