@@ -70,7 +70,10 @@ def _analyse_maze(seed: int) -> dict | None:
             path_positions = [START]
 
         num_turns = count_turns(path_positions)
-        _, longest_trap, num_traps = find_trap_corridors(pos_list, adjacency)
+        trap_corridors, longest_trap, num_traps = find_trap_corridors(pos_list, adjacency)
+        avg_trap_len = (
+            sum(len(c) for c in trap_corridors) / num_traps if num_traps > 0 else 0.0
+        )
 
         # Normalized signals (same formula as compute_complexity_score)
         raw_ratio   = food_count / steps if steps > 0 else MIN_TRAVERSAL
@@ -90,6 +93,7 @@ def _analyse_maze(seed: int) -> dict | None:
             "food_count":   food_count,
             "steps":        steps,
             "longest_trap": longest_trap,
+            "avg_trap_len": avg_trap_len,
             "num_traps":    num_traps,
             "num_turns":    num_turns,
             "s_traversal":  s_traversal,
@@ -179,6 +183,7 @@ def main() -> int:
     print(f"\n{len(results)}/{args.n} mazes scored successfully.")
 
     longest_traps  = [r["longest_trap"] for r in results]
+    avg_trap_lens  = [r["avg_trap_len"] for r in results]
     num_traps_lst  = [r["num_traps"]    for r in results]
     num_turns_lst  = [r["num_turns"]    for r in results]
     s_traversal_l  = [r["s_traversal"]  for r in results]
@@ -191,6 +196,7 @@ def main() -> int:
     print("  RAW SIGNAL DISTRIBUTIONS")
     print("=" * 60)
     _print_stats("longest_trap", longest_traps, MAX_TRAP_LEN)
+    _print_stats("avg_trap_len", avg_trap_lens)
     _print_stats("num_traps",    num_traps_lst,  MAX_NUM_TRAPS)
     _print_stats("num_turns",    num_turns_lst,  MAX_TURNS)
 

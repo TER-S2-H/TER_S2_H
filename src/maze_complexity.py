@@ -724,6 +724,9 @@ def compute_complexity_score(
 
     # 5.6 Find trap corridors
     trap_corridors, longest_trap, num_traps = find_trap_corridors(pos_list, adjacency)
+    avg_trap_len: float = (
+        sum(len(c) for c in trap_corridors) / num_traps if num_traps > 0 else 0.0
+    )
 
     # 5.7 Compute new score
     # All four signals normalised via p5/p95 min-max, then clamped to [0, 1].
@@ -751,8 +754,9 @@ def compute_complexity_score(
         "method":       method,
         "wrap_tunnels": wrap_tunnels,
         # New keys
-        "longest_trap": longest_trap,
-        "num_traps":       num_traps,
+        "longest_trap":  longest_trap,
+        "avg_trap_len":  round(avg_trap_len, 4),
+        "num_traps":     num_traps,
         "num_turns":       num_turns,
         "s_traversal":     round(s_traversal, 6),
         "s_trap_len":      round(s_trap_len,  6),
