@@ -43,6 +43,12 @@ MAX_TRAP_LEN:  int   = 22    # longest plausible interior corridor length
 MAX_NUM_TRAPS: int   = 67    # 95th-percentile trap count across generated mazes
 MAX_TURNS:     int   = 112   # 95th-percentile turn count across generated mazes
 
+# Traversal ratio (food_count/steps) range from 500-maze analysis (greedy path)
+# p5  → easy traversal lower bound (hard mazes have low ratio)
+# p95 → easy traversal upper bound (easy mazes have high ratio)
+MIN_TRAVERSAL: float = 0.729  # p5  of food_count/steps distribution
+MAX_TRAVERSAL: float = 0.828  # p95 of food_count/steps distribution
+
 # Combination weights — must sum to 1.0
 W_TRAVERSAL: float = 0.25
 W_TRAP_LEN:  float = 0.25
@@ -717,8 +723,11 @@ def compute_complexity_score(
     trap_corridors, longest_trap, num_traps = find_trap_corridors(pos_list, adjacency)
 
     # 5.7 Compute new score
-    # s_traversal is inverted: high food/steps ratio = easy sweep = low difficulty
-    s_traversal = 1.0 - (food_count / steps if steps > 0 else 1.0)
+    # Normalise traversal ratio into [0,1] using p5/p95 bounds, then invert
+    # (low ratio = hard = high difficulty signal)
+    raw_ratio   = food_count / steps if steps > 0 else MIN_TRAVERSAL
+    s_traversal = (raw_ratio - MIN_TRAVERSAL) / (MAX_TRAVERSAL - MIN_TRAVERSAL)
+    s_traversal = 1.0 - max(0.0, min(s_traversal, 1.0))
     s_trap_len  = min(longest_trap / MAX_TRAP_LEN,  1.0)
     s_trap_cnt  = min(num_traps    / MAX_NUM_TRAPS, 1.0)
     s_turns     = min(num_turns    / MAX_TURNS,     1.0)
