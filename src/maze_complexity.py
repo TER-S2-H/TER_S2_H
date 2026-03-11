@@ -40,10 +40,11 @@ Position = Tuple[int, int]
 
 # 5th/95th-percentile bounds derived from 500 generated mazes (28×31 grid)
 # Each signal is normalised as: clamp((raw - MIN) / (MAX - MIN), 0, 1)
+TRAP_MIN_INTERIOR: int = 5    # only corridors with interior length > this are counted
 MIN_TRAP_LEN:  int   = 13    # p5  of longest_trap distribution
 MAX_TRAP_LEN:  int   = 22    # p95 of longest_trap distribution
-MIN_NUM_TRAPS: int   = 46    # p5  of num_traps distribution
-MAX_NUM_TRAPS: int   = 67    # p95 of num_traps distribution
+MIN_NUM_TRAPS: int   = 14    # p5  of num_traps distribution  (recalibrated for interior>5)
+MAX_NUM_TRAPS: int   = 24    # p95 of num_traps distribution  (recalibrated for interior>5)
 MIN_TURNS:     int   = 86    # p5  of num_turns distribution
 MAX_TURNS:     int   = 112   # p95 of num_turns distribution
 
@@ -483,11 +484,16 @@ def count_turns(path_positions: List[Position]) -> int:
 def find_trap_corridors(
     pos_list: List[Position],
     adjacency: List[List[int]],
+    min_interior: int = 1,
 ) -> Tuple[List[List[Position]], int, int]:
     """Find all valid trap corridors in the maze graph (O(N)).
 
     A trap corridor is a maximal chain of degree-2 interior nodes bounded at
     both ends by a distinct junction node of degree >= 3.
+
+    Args:
+        min_interior: only corridors whose interior node count is strictly
+                      greater than this value are included in the results.
 
     Returns:
         corridors  -- list of corridors, each as [(x,y), ...] from v0 to vn
@@ -535,6 +541,8 @@ def find_trap_corridors(
             continue
         if v_left == v_right:
             continue  # loop — same junction on both sides
+        if len(interior) <= min_interior:
+            continue  # too short — skip
 
         # Record corridor as position list from v0 to vn inclusive
         corridor_indices = [v_left] + interior + [v_right]
@@ -723,7 +731,9 @@ def compute_complexity_score(
     num_turns = count_turns(path_positions)
 
     # 5.6 Find trap corridors
-    trap_corridors, longest_trap, num_traps = find_trap_corridors(pos_list, adjacency)
+    trap_corridors, longest_trap, num_traps = find_trap_corridors(
+        pos_list, adjacency, min_interior=TRAP_MIN_INTERIOR
+    )
     avg_trap_len: float = (
         sum(len(c) for c in trap_corridors) / num_traps if num_traps > 0 else 0.0
     )

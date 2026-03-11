@@ -29,6 +29,7 @@ from src.maze_complexity import (
     MIN_TRAP_LEN,  MAX_TRAP_LEN,
     MIN_NUM_TRAPS, MAX_NUM_TRAPS,
     MIN_TURNS,     MAX_TURNS,
+    TRAP_MIN_INTERIOR,
     W_TRAP_LEN, W_TRAP_CNT, W_TURNS,
 )
 
@@ -70,7 +71,9 @@ def _analyse_maze(seed: int) -> dict | None:
             path_positions = [START]
 
         num_turns = count_turns(path_positions)
-        trap_corridors, longest_trap, num_traps = find_trap_corridors(pos_list, adjacency)
+        trap_corridors, longest_trap, num_traps = find_trap_corridors(
+            pos_list, adjacency, min_interior=TRAP_MIN_INTERIOR
+        )
         avg_trap_len = (
             sum(len(c) for c in trap_corridors) / num_traps if num_traps > 0 else 0.0
         )
