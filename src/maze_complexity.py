@@ -57,10 +57,13 @@ STD_TRAP_LEN:     float = 2.81089   # std  of longest_trap
 MEAN_TRAP_CNT:    float = 18.48800  # mean of num_traps
 STD_TRAP_CNT:     float = 3.05317   # std  of num_traps
 
-# Combination weights — must sum to 1.0
-W_STEPS:    float = 1 / 3
-W_TRAP_LEN: float = 1 / 3
-W_TRAP_CNT: float = 1 / 3
+# Combination weights — variance-proportional (higher variance → higher weight)
+# Derived from 500-maze analysis (seed=42): var(s_steps)=0.3962, var(s_trap_len)=0.2754,
+# var(s_trap_cnt)=0.4041, total=1.0757. w_X = var_X / total_var.
+# Effect: s_trap_len (lowest variance) is downweighted; score std rises from 1.559→1.663.
+W_STEPS:    float = 0.368330
+W_TRAP_LEN: float = 0.256003
+W_TRAP_CNT: float = 0.375667
 
 assert abs(W_STEPS + W_TRAP_LEN + W_TRAP_CNT - 1.0) < 1e-9, (
     "Score weights must sum to 1.0"
