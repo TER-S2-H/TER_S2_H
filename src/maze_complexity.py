@@ -45,23 +45,24 @@ TRAP_MIN_INTERIOR: int = 5
 # Mean and std of each raw signal — derived from 500 generated mazes (28×31)
 # using the greedy path algorithm (seed=42).
 # Each signal is z-normalised then squashed: s = tanh((raw - MEAN) / STD)
-# All four signals live in (-1, +1); negative = easier than average.
+# Signals live in (-1, +1); negative = easier than average, positive = harder.
+#
+# The three signals are nearly uncorrelated (max |r| = 0.21 across 500 mazes),
+# so equal weighting 1/3 is well-justified. s_turns was dropped because it
+# overlaps heavily with s_steps (r = +0.56).
 MEAN_STEPS_RATIO: float = 1.28347   # mean of steps / food_count
 STD_STEPS_RATIO:  float = 0.04925   # std  of steps / food_count
 MEAN_TRAP_LEN:    float = 16.27000  # mean of longest_trap (interior > TRAP_MIN_INTERIOR)
 STD_TRAP_LEN:     float = 2.81089   # std  of longest_trap
 MEAN_TRAP_CNT:    float = 18.48800  # mean of num_traps
 STD_TRAP_CNT:     float = 3.05317   # std  of num_traps
-MEAN_TURNS:       float = 99.42000  # mean of num_turns
-STD_TURNS:        float = 7.86382   # std  of num_turns
 
 # Combination weights — must sum to 1.0
-W_STEPS:    float = 0.25
-W_TRAP_LEN: float = 0.25
-W_TRAP_CNT: float = 0.25
-W_TURNS:    float = 0.25
+W_STEPS:    float = 1 / 3
+W_TRAP_LEN: float = 1 / 3
+W_TRAP_CNT: float = 1 / 3
 
-assert abs(W_STEPS + W_TRAP_LEN + W_TRAP_CNT + W_TURNS - 1.0) < 1e-9, (
+assert abs(W_STEPS + W_TRAP_LEN + W_TRAP_CNT - 1.0) < 1e-9, (
     "Score weights must sum to 1.0"
 )
 
@@ -743,15 +744,13 @@ def compute_complexity_score(
     # 5.7 Compute score
     # Each signal: z-normalise then apply tanh  →  (-1, +1)
     # Negative = easier than average, positive = harder.
-    # Score mapped from mean(signals) ∈ (-1,+1) to [0, 10] via (x+1)/2*10.
+    # Score mapped from mean(3 signals) ∈ (-1,+1) to [0, 10] via (x+1)/2*10.
     steps_ratio = steps / food_count if food_count > 0 else MEAN_STEPS_RATIO
     s_steps    = math.tanh((steps_ratio  - MEAN_STEPS_RATIO) / STD_STEPS_RATIO)
     s_trap_len = math.tanh((longest_trap - MEAN_TRAP_LEN)    / STD_TRAP_LEN)
     s_trap_cnt = math.tanh((num_traps    - MEAN_TRAP_CNT)    / STD_TRAP_CNT)
-    s_turns    = math.tanh((num_turns    - MEAN_TURNS)       / STD_TURNS)
 
-    combined = (W_STEPS * s_steps + W_TRAP_LEN * s_trap_len
-                + W_TRAP_CNT * s_trap_cnt + W_TURNS * s_turns)
+    combined = W_STEPS * s_steps + W_TRAP_LEN * s_trap_len + W_TRAP_CNT * s_trap_cnt
     score = (combined + 1.0) / 2.0 * 10.0
 
     # 5.8 Return updated dict
@@ -769,7 +768,6 @@ def compute_complexity_score(
         "s_steps":       round(s_steps,    6),
         "s_trap_len":    round(s_trap_len, 6),
         "s_trap_cnt":    round(s_trap_cnt, 6),
-        "s_turns":       round(s_turns,    6),
         "trap_corridors": trap_corridors,
     }
 

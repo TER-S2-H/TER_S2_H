@@ -30,8 +30,7 @@ from src.maze_complexity import (
     MEAN_STEPS_RATIO, STD_STEPS_RATIO,
     MEAN_TRAP_LEN, STD_TRAP_LEN,
     MEAN_TRAP_CNT, STD_TRAP_CNT,
-    MEAN_TURNS, STD_TURNS,
-    W_STEPS, W_TRAP_LEN, W_TRAP_CNT, W_TURNS,
+    W_STEPS, W_TRAP_LEN, W_TRAP_CNT,
 )
 
 START: tuple = (13, 23)
@@ -84,9 +83,7 @@ def _analyse_maze(seed: int) -> dict | None:
         s_steps    = math.tanh((steps_ratio  - MEAN_STEPS_RATIO) / STD_STEPS_RATIO)
         s_trap_len = math.tanh((longest_trap - MEAN_TRAP_LEN)    / STD_TRAP_LEN)
         s_trap_cnt = math.tanh((num_traps    - MEAN_TRAP_CNT)    / STD_TRAP_CNT)
-        s_turns    = math.tanh((num_turns    - MEAN_TURNS)       / STD_TURNS)
-        combined = (W_STEPS * s_steps + W_TRAP_LEN * s_trap_len
-                    + W_TRAP_CNT * s_trap_cnt + W_TURNS * s_turns)
+        combined = W_STEPS * s_steps + W_TRAP_LEN * s_trap_len + W_TRAP_CNT * s_trap_cnt
         score = (combined + 1.0) / 2.0 * 10.0
 
         return {
@@ -100,7 +97,6 @@ def _analyse_maze(seed: int) -> dict | None:
             "s_steps":      s_steps,
             "s_trap_len":   s_trap_len,
             "s_trap_cnt":   s_trap_cnt,
-            "s_turns":      s_turns,
             "score":        score,
         }
     except Exception as e:
@@ -190,7 +186,6 @@ def main() -> int:
     s_steps_l      = [r["s_steps"]      for r in results]
     s_trap_len_l   = [r["s_trap_len"]   for r in results]
     s_trap_cnt_l   = [r["s_trap_cnt"]   for r in results]
-    s_turns_l      = [r["s_turns"]      for r in results]
     scores         = [r["score"]        for r in results]
 
     print("\n" + "=" * 60)
@@ -204,10 +199,9 @@ def main() -> int:
     print("\n" + "=" * 60)
     print("  NORMALISED SIGNAL DISTRIBUTIONS  (tanh-z, range ≈ (-1, +1))")
     print("=" * 60)
-    _print_stats("s_steps      (w=0.25)", s_steps_l,    fmt=".3f")
-    _print_stats("s_trap_len   (w=0.25)", s_trap_len_l, fmt=".3f")
-    _print_stats("s_trap_cnt   (w=0.25)", s_trap_cnt_l, fmt=".3f")
-    _print_stats("s_turns      (w=0.25)", s_turns_l,    fmt=".3f")
+    _print_stats("s_steps      (w=1/3)", s_steps_l,    fmt=".3f")
+    _print_stats("s_trap_len   (w=1/3)", s_trap_len_l, fmt=".3f")
+    _print_stats("s_trap_cnt   (w=1/3)", s_trap_cnt_l, fmt=".3f")
 
     print("\n" + "=" * 60)
     print("  FINAL SCORE DISTRIBUTION  (range 0–10)")
@@ -224,7 +218,6 @@ def main() -> int:
         ("s_steps",      s_steps_l),
         ("s_trap_len",   s_trap_len_l),
         ("s_trap_cnt",   s_trap_cnt_l),
-        ("s_turns",      s_turns_l),
         ("score (/10)",  scores),
     ]:
         st = _stats(vals)
@@ -238,7 +231,6 @@ def main() -> int:
         ("steps_ratio",  steps_ratios,  MEAN_STEPS_RATIO, STD_STEPS_RATIO),
         ("longest_trap", longest_traps, MEAN_TRAP_LEN,    STD_TRAP_LEN),
         ("num_traps",    num_traps_lst, MEAN_TRAP_CNT,    STD_TRAP_CNT),
-        ("num_turns",    num_turns_lst, MEAN_TURNS,       STD_TURNS),
     ):
         st = _stats(vals)
         m_marker = "" if abs(st["mean"] - cur_mean) < 0.01 else f"  ← was {cur_mean:.5f}"
