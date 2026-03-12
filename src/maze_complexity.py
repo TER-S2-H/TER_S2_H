@@ -28,6 +28,7 @@ Score formula:
 
 import argparse
 import json
+import math
 import random as _random
 from collections import deque
 from typing import Deque, Dict, List, Set, Tuple
@@ -38,28 +39,29 @@ Position = Tuple[int, int]
 # Module-level constants for score normalisation and weighting
 # ---------------------------------------------------------------------------
 
-# 5th/95th-percentile bounds derived from 500 generated mazes (28×31 grid)
-# Each signal is normalised as: clamp((raw - MIN) / (MAX - MIN), 0, 1)
-TRAP_MIN_INTERIOR: int = 5    # only corridors with interior length > this are counted
-MIN_TRAP_LEN:  int   = 13    # p5  of longest_trap distribution
-MAX_TRAP_LEN:  int   = 22    # p95 of longest_trap distribution
-MIN_NUM_TRAPS: int   = 14    # p5  of num_traps distribution  (recalibrated for interior>5)
-MAX_NUM_TRAPS: int   = 24    # p95 of num_traps distribution  (recalibrated for interior>5)
-MIN_TURNS:     int   = 86    # p5  of num_turns distribution
-MAX_TURNS:     int   = 112   # p95 of num_turns distribution
+# Minimum interior length for a corridor to be counted as a trap
+TRAP_MIN_INTERIOR: int = 5
 
-# Traversal ratio (food_count/steps) range from 500-maze analysis (greedy path)
-# p5  → easy traversal lower bound (hard mazes have low ratio)
-# p95 → easy traversal upper bound (easy mazes have high ratio)
-MIN_TRAVERSAL: float = 0.729  # p5  of food_count/steps distribution
-MAX_TRAVERSAL: float = 0.828  # p95 of food_count/steps distribution
+# Mean and std of each raw signal — derived from 500 generated mazes (28×31)
+# using the greedy path algorithm (seed=42).
+# Each signal is z-normalised then squashed: s = tanh((raw - MEAN) / STD)
+# All four signals live in (-1, +1); negative = easier than average.
+MEAN_STEPS_RATIO: float = 1.28347   # mean of steps / food_count
+STD_STEPS_RATIO:  float = 0.04925   # std  of steps / food_count
+MEAN_TRAP_LEN:    float = 16.27000  # mean of longest_trap (interior > TRAP_MIN_INTERIOR)
+STD_TRAP_LEN:     float = 2.81089   # std  of longest_trap
+MEAN_TRAP_CNT:    float = 18.48800  # mean of num_traps
+STD_TRAP_CNT:     float = 3.05317   # std  of num_traps
+MEAN_TURNS:       float = 99.42000  # mean of num_turns
+STD_TURNS:        float = 7.86382   # std  of num_turns
 
-# Combination weights (traversal is kept in JSON but excluded from score)
-W_TRAP_LEN: float = 1 / 3
-W_TRAP_CNT: float = 1 / 3
-W_TURNS:    float = 1 / 3
+# Combination weights — must sum to 1.0
+W_STEPS:    float = 0.25
+W_TRAP_LEN: float = 0.25
+W_TRAP_CNT: float = 0.25
+W_TURNS:    float = 0.25
 
-assert abs(W_TRAP_LEN + W_TRAP_CNT + W_TURNS - 1.0) < 1e-9, (
+assert abs(W_STEPS + W_TRAP_LEN + W_TRAP_CNT + W_TURNS - 1.0) < 1e-9, (
     "Score weights must sum to 1.0"
 )
 
@@ -738,23 +740,19 @@ def compute_complexity_score(
         sum(len(c) for c in trap_corridors) / num_traps if num_traps > 0 else 0.0
     )
 
-    # 5.7 Compute new score
-    # All four signals normalised via p5/p95 min-max, then clamped to [0, 1].
-    # Inversion where needed so all signals are high=hard.
-    raw_ratio   = food_count / steps if steps > 0 else MIN_TRAVERSAL
-    s_traversal = (raw_ratio   - MIN_TRAVERSAL) / (MAX_TRAVERSAL - MIN_TRAVERSAL)
-    s_traversal = 1.0 - max(0.0, min(s_traversal, 1.0))   # invert: low ratio = hard
-    s_trap_len  = (longest_trap - MIN_TRAP_LEN)  / (MAX_TRAP_LEN  - MIN_TRAP_LEN)
-    s_trap_len  = max(0.0, min(s_trap_len,  1.0))
-    s_trap_cnt  = (num_traps    - MIN_NUM_TRAPS) / (MAX_NUM_TRAPS - MIN_NUM_TRAPS)
-    s_trap_cnt  = max(0.0, min(s_trap_cnt,  1.0))
-    s_turns     = (num_turns    - MIN_TURNS)     / (MAX_TURNS     - MIN_TURNS)
-    s_turns     = max(0.0, min(s_turns,     1.0))
+    # 5.7 Compute score
+    # Each signal: z-normalise then apply tanh  →  (-1, +1)
+    # Negative = easier than average, positive = harder.
+    # Score mapped from mean(signals) ∈ (-1,+1) to [0, 10] via (x+1)/2*10.
+    steps_ratio = steps / food_count if food_count > 0 else MEAN_STEPS_RATIO
+    s_steps    = math.tanh((steps_ratio  - MEAN_STEPS_RATIO) / STD_STEPS_RATIO)
+    s_trap_len = math.tanh((longest_trap - MEAN_TRAP_LEN)    / STD_TRAP_LEN)
+    s_trap_cnt = math.tanh((num_traps    - MEAN_TRAP_CNT)    / STD_TRAP_CNT)
+    s_turns    = math.tanh((num_turns    - MEAN_TURNS)       / STD_TURNS)
 
-    raw   = (W_TRAP_LEN * s_trap_len
-             + W_TRAP_CNT * s_trap_cnt
-             + W_TURNS   * s_turns)
-    score = min(raw * 10, 10.0)
+    combined = (W_STEPS * s_steps + W_TRAP_LEN * s_trap_len
+                + W_TRAP_CNT * s_trap_cnt + W_TURNS * s_turns)
+    score = (combined + 1.0) / 2.0 * 10.0
 
     # 5.8 Return updated dict
     return {
@@ -763,16 +761,16 @@ def compute_complexity_score(
         "score":        round(score, 4),
         "method":       method,
         "wrap_tunnels": wrap_tunnels,
-        # New keys
+        # Signal values
         "longest_trap":  longest_trap,
         "avg_trap_len":  round(avg_trap_len, 4),
         "num_traps":     num_traps,
-        "num_turns":       num_turns,
-        "s_traversal":     round(s_traversal, 6),
-        "s_trap_len":      round(s_trap_len,  6),
-        "s_trap_cnt":      round(s_trap_cnt,  6),
-        "s_turns":         round(s_turns,     6),
-        "trap_corridors":  trap_corridors,
+        "num_turns":     num_turns,
+        "s_steps":       round(s_steps,    6),
+        "s_trap_len":    round(s_trap_len, 6),
+        "s_trap_cnt":    round(s_trap_cnt, 6),
+        "s_turns":       round(s_turns,    6),
+        "trap_corridors": trap_corridors,
     }
 
 

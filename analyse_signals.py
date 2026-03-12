@@ -3,14 +3,15 @@
 Statistical analysis of maze difficulty signals.
 
 Generates N mazes in-memory, computes complexity signals for each, and
-reports the full distribution of longest_trap, num_traps, and num_turns
-so that MAX_TRAP_LEN, MAX_NUM_TRAPS, MAX_TURNS can be calibrated.
+reports the full distribution of raw signals and normalised tanh-z signals
+so that MEAN_* / STD_* constants in maze_complexity.py can be recalibrated.
 
 Usage:
     python3 analyse_signals.py [--n N] [--seed SEED] [--start-seed S]
 """
 
 import argparse
+import math
 import random
 import sys
 
@@ -25,12 +26,12 @@ from src.maze_complexity import (
     _expand_node_order,
     count_turns,
     find_trap_corridors,
-    MIN_TRAVERSAL, MAX_TRAVERSAL,
-    MIN_TRAP_LEN,  MAX_TRAP_LEN,
-    MIN_NUM_TRAPS, MAX_NUM_TRAPS,
-    MIN_TURNS,     MAX_TURNS,
     TRAP_MIN_INTERIOR,
-    W_TRAP_LEN, W_TRAP_CNT, W_TURNS,
+    MEAN_STEPS_RATIO, STD_STEPS_RATIO,
+    MEAN_TRAP_LEN, STD_TRAP_LEN,
+    MEAN_TRAP_CNT, STD_TRAP_CNT,
+    MEAN_TURNS, STD_TURNS,
+    W_STEPS, W_TRAP_LEN, W_TRAP_CNT, W_TURNS,
 )
 
 START: tuple = (13, 23)
@@ -78,18 +79,15 @@ def _analyse_maze(seed: int) -> dict | None:
             sum(len(c) for c in trap_corridors) / num_traps if num_traps > 0 else 0.0
         )
 
-        # Normalized signals (same formula as compute_complexity_score)
-        raw_ratio   = food_count / steps if steps > 0 else MIN_TRAVERSAL
-        s_traversal = (raw_ratio   - MIN_TRAVERSAL) / (MAX_TRAVERSAL - MIN_TRAVERSAL)
-        s_traversal = 1.0 - max(0.0, min(s_traversal, 1.0))
-        s_trap_len  = (longest_trap - MIN_TRAP_LEN)  / (MAX_TRAP_LEN  - MIN_TRAP_LEN)
-        s_trap_len  = max(0.0, min(s_trap_len,  1.0))
-        s_trap_cnt  = (num_traps    - MIN_NUM_TRAPS) / (MAX_NUM_TRAPS - MIN_NUM_TRAPS)
-        s_trap_cnt  = max(0.0, min(s_trap_cnt,  1.0))
-        s_turns     = (num_turns    - MIN_TURNS)     / (MAX_TURNS     - MIN_TURNS)
-        s_turns     = max(0.0, min(s_turns,     1.0))
-        raw   = (W_TRAP_LEN * s_trap_len + W_TRAP_CNT * s_trap_cnt + W_TURNS * s_turns)
-        score = min(raw * 10, 10.0)
+        # Normalized signals — tanh-z (same formula as compute_complexity_score)
+        steps_ratio = steps / food_count if food_count > 0 else MEAN_STEPS_RATIO
+        s_steps    = math.tanh((steps_ratio  - MEAN_STEPS_RATIO) / STD_STEPS_RATIO)
+        s_trap_len = math.tanh((longest_trap - MEAN_TRAP_LEN)    / STD_TRAP_LEN)
+        s_trap_cnt = math.tanh((num_traps    - MEAN_TRAP_CNT)    / STD_TRAP_CNT)
+        s_turns    = math.tanh((num_turns    - MEAN_TURNS)       / STD_TURNS)
+        combined = (W_STEPS * s_steps + W_TRAP_LEN * s_trap_len
+                    + W_TRAP_CNT * s_trap_cnt + W_TURNS * s_turns)
+        score = (combined + 1.0) / 2.0 * 10.0
 
         return {
             "seed":         seed,
@@ -99,7 +97,7 @@ def _analyse_maze(seed: int) -> dict | None:
             "avg_trap_len": avg_trap_len,
             "num_traps":    num_traps,
             "num_turns":    num_turns,
-            "s_traversal":  s_traversal,
+            "s_steps":      s_steps,
             "s_trap_len":   s_trap_len,
             "s_trap_cnt":   s_trap_cnt,
             "s_turns":      s_turns,
@@ -189,7 +187,7 @@ def main() -> int:
     avg_trap_lens  = [r["avg_trap_len"] for r in results]
     num_traps_lst  = [r["num_traps"]    for r in results]
     num_turns_lst  = [r["num_turns"]    for r in results]
-    s_traversal_l  = [r["s_traversal"]  for r in results]
+    s_steps_l      = [r["s_steps"]      for r in results]
     s_trap_len_l   = [r["s_trap_len"]   for r in results]
     s_trap_cnt_l   = [r["s_trap_cnt"]   for r in results]
     s_turns_l      = [r["s_turns"]      for r in results]
@@ -198,18 +196,18 @@ def main() -> int:
     print("\n" + "=" * 60)
     print("  RAW SIGNAL DISTRIBUTIONS")
     print("=" * 60)
-    _print_stats("longest_trap", longest_traps, MAX_TRAP_LEN)
+    _print_stats("longest_trap", longest_traps)
     _print_stats("avg_trap_len", avg_trap_lens)
-    _print_stats("num_traps",    num_traps_lst,  MAX_NUM_TRAPS)
-    _print_stats("num_turns",    num_turns_lst,  MAX_TURNS)
+    _print_stats("num_traps",    num_traps_lst)
+    _print_stats("num_turns",    num_turns_lst)
 
     print("\n" + "=" * 60)
-    print("  NORMALISED SIGNAL DISTRIBUTIONS  (all should span [0, 1])")
+    print("  NORMALISED SIGNAL DISTRIBUTIONS  (tanh-z, range ≈ (-1, +1))")
     print("=" * 60)
-    _print_stats("s_traversal  (w=0.25)", s_traversal_l, fmt=".3f")
-    _print_stats("s_trap_len   (w=0.25)", s_trap_len_l,  fmt=".3f")
-    _print_stats("s_trap_cnt   (w=0.25)", s_trap_cnt_l,  fmt=".3f")
-    _print_stats("s_turns      (w=0.25)", s_turns_l,     fmt=".3f")
+    _print_stats("s_steps      (w=0.25)", s_steps_l,    fmt=".3f")
+    _print_stats("s_trap_len   (w=0.25)", s_trap_len_l, fmt=".3f")
+    _print_stats("s_trap_cnt   (w=0.25)", s_trap_cnt_l, fmt=".3f")
+    _print_stats("s_turns      (w=0.25)", s_turns_l,    fmt=".3f")
 
     print("\n" + "=" * 60)
     print("  FINAL SCORE DISTRIBUTION  (range 0–10)")
@@ -223,7 +221,7 @@ def main() -> int:
     print(f"  {'signal':<22}  {'mean':>6}  {'std':>6}  {'var':>8}  {'min':>6}  {'max':>6}")
     print(f"  {'-'*22}  {'-'*6}  {'-'*6}  {'-'*8}  {'-'*6}  {'-'*6}")
     for label, vals in [
-        ("s_traversal",  s_traversal_l),
+        ("s_steps",      s_steps_l),
         ("s_trap_len",   s_trap_len_l),
         ("s_trap_cnt",   s_trap_cnt_l),
         ("s_turns",      s_turns_l),
@@ -233,20 +231,19 @@ def main() -> int:
         print(f"  {label:<22}  {st['mean']:>6.3f}  {st['std']:>6.3f}  {st['std']**2:>8.4f}  {st['min']:>6.3f}  {st['max']:>6.3f}")
 
     print("\n" + "=" * 60)
-    print("  SUGGESTED CAPS (p5/p95, rounded to nearest integer)")
+    print("  SUGGESTED MEAN/STD RECALIBRATION (from this run)")
     print("=" * 60)
-    for label, vals, cur_min, cur_max in (
-        ("longest_trap", longest_traps, MIN_TRAP_LEN,  MAX_TRAP_LEN),
-        ("num_traps",    num_traps_lst,  MIN_NUM_TRAPS, MAX_NUM_TRAPS),
-        ("num_turns",    num_turns_lst,  MIN_TURNS,     MAX_TURNS),
+    steps_ratios = [r["steps"] / r["food_count"] for r in results if r["food_count"] > 0]
+    for label, vals, cur_mean, cur_std in (
+        ("steps_ratio",  steps_ratios,  MEAN_STEPS_RATIO, STD_STEPS_RATIO),
+        ("longest_trap", longest_traps, MEAN_TRAP_LEN,    STD_TRAP_LEN),
+        ("num_traps",    num_traps_lst, MEAN_TRAP_CNT,    STD_TRAP_CNT),
+        ("num_turns",    num_turns_lst, MEAN_TURNS,       STD_TURNS),
     ):
-        p5  = _percentile(vals, 5)
-        p95 = _percentile(vals, 95)
-        sug_min = int(p5)
-        sug_max = max(sug_min + 1, int(p95) + (1 if p95 % 1 else 0))
-        m_marker = "" if sug_min == cur_min else f"  ← was {cur_min}"
-        M_marker = "" if sug_max == cur_max else f"  ← was {cur_max}"
-        print(f"    {label}: MIN={sug_min}{m_marker}  MAX={sug_max}{M_marker}")
+        st = _stats(vals)
+        m_marker = "" if abs(st["mean"] - cur_mean) < 0.01 else f"  ← was {cur_mean:.5f}"
+        s_marker = "" if abs(st["std"]  - cur_std)  < 0.01 else f"  ← was {cur_std:.5f}"
+        print(f"    {label}: MEAN={st['mean']:.5f}{m_marker}  STD={st['std']:.5f}{s_marker}")
 
     return 0
 
