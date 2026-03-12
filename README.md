@@ -1,141 +1,200 @@
-# Pac-Man Maze Generator
+# TER S2 — Pac-Man Maze Generator — Groupe H
 
-Generate random Pac-Man-style mazes with JSON graph export, PNG visualization, and text rendering.
+Générateur de maze Pac-Man exposé en tant que web service HTTP, déployé sur Render.
 
-## Requirements
+**URL du service :** https://pacman-s2-h.onrender.com
 
-Python 3.6+ with Pillow library:
+---
 
-```bash
-pip install Pillow
-```
+## Installation
 
-## Quick Start
-
-Generate a maze with all outputs (JSON, PNG, TXT):
+Python 3.6+ requis.
 
 ```bash
-python3 generate.py
+# Dépendances serveur (API Flask + générateur)
+pip install -r requirements.txt
+
+# Dépendances client local (visualisation Pygame)
+pip install -r requirements-client.txt
 ```
 
-Output folder `maze_[seed]/` contains:
-- `maze.json` - Graph representation with embedded complexity score
-- `maze.png` - Visual rendering (560x620px, 20px tiles)
-- `maze.txt` - ASCII art
+> `requirements.txt` est utilisé par Render pour le déploiement — il ne contient
+> pas pygame qui n'est utile qu'en local. C'est pourquoi il y a deux fichiers séparés.
 
-## Usage
+---
 
-### Generate Maze
-
-```bash
-python3 generate.py [options]
-```
-
-Options:
-- `-o, --output PATH` - Output folder name (default: maze_[seed])
-- `--seed SEED` - Random seed for reproducible mazes
-- `-s, --size SIZE` - Tile size in pixels (default: 20)
-- `--json-only` - Generate only JSON file
-- `--png-only` - Generate only PNG file
-- `--text-only` - Generate only text file
-- `-v, --verbose` - Detailed output
-
-Examples:
-```bash
-python3 generate.py --seed 42
-python3 generate.py -o output -s 30
-python3 generate.py --json-only
-```
-
-### Render from JSON
-
-```bash
-python3 render_json.py <json_file> [options]
-```
-
-Options:
-- `-o, --output PATH` - Output image file
-- `-s, --size SIZE` - Tile size in pixels (default: 20)
-- `--show-graph` - Visualize nodes and edges
-- `-v, --verbose` - Detailed output
-
-Examples:
-```bash
-python3 render_json.py maze_42/maze.json
-python3 render_json.py maze_42/maze.json -o output.png -s 30
-python3 render_json.py maze_42/maze.json --show-graph
-```
-
-### Complexity Score
-
-Compute and embed the complexity score in `maze.json`. The score uses a greedy nearest-neighbor algorithm with 2-opt local search optimization to find a near-optimal path that visits all food tiles. The swap iterations are automatically determined based on maze size for optimal results.
-
-**Score Formula:** `score = (food_count / steps) × 10` (capped at 10)
-
-```bash
-python3 maze_complexity.py maze_42/maze.json
-```
-
-Options:
-- `--no-tunnel-wrap` - Disable left-right tunnel wrapping
-- `-v, --verbose` - Detailed output
-
-### Complexity Visualization
-
-Create an animated GIF of the greedy path:
-
-```bash
-python3 maze_complexity_visualize.py maze_42/maze.json
-```
-
-Options:
-- `-o, --output PATH` - Output GIF file
-- `-s, --size SIZE` - Tile size in pixels (default: 20)
-- `--frame-step N` - Steps per frame (default: 5)
-- `--max-frames N` - Maximum number of frames (default: 1000)
-- `--duration MS` - Frame duration in ms (default: 150)
-- `--no-tunnel-wrap` - Disable left-right tunnel wrapping
-- `-v, --verbose` - Detailed output
-
-## Project Structure
+## Structure du projet
 
 ```
-.
-├── generate.py                   - Main maze generator (wrapper)
-├── maze_complexity.py            - Complexity score (wrapper)
-├── maze_complexity_visualize.py  - Path visualization (wrapper)
-├── render_json.py                - JSON renderer (wrapper)
+├── app.py                        # API Flask (serveur web)
+├── client.py                     # Visualisation Pygame (client local)
+├── generate.py                   # Générateur en ligne de commande (wrapper)
+├── maze_complexity.py            # Score de complexité (wrapper)
+├── maze_complexity_visualize.py  # Visualisation du chemin (wrapper)
+├── render_json.py                # Rendu depuis JSON (wrapper)
+├── Procfile                      # Configuration Render
+├── requirements.txt              # Dépendances serveur (Render)
+├── requirements-client.txt       # Dépendances client local
 ├── src/
-│   ├── generate.py                   - Generator implementation
-│   ├── maze_complexity.py            - Complexity score implementation
-│   ├── maze_complexity_visualize.py  - Visualization implementation
-│   ├── render_json.py                - JSON renderer implementation
-│   ├── pacman_map.py                 - Maze generation logic
-│   └── maze_renderer.py              - Rendering functions
-└── maze_[seed]/         - Generated output folders
-  ├── maze.json        - Graph + complexity score
-  ├── maze.png         - Visual rendering
-  └── maze.txt         - ASCII art
+│   ├── pacman_map.py             # Logique de génération du maze
+│   ├── maze_renderer.py          # Rendu PNG
+│   ├── maze_complexity.py        # Calcul du score de complexité
+│   ├── maze_complexity_visualize.py
+│   ├── generate.py
+│   └── render_json.py
+└── tests/
+    ├── test_api_local.py         # Tests fonctionnels (Flask test client)
+    ├── test_maze_properties.py   # Tests caractéristiques du maze
+    ├── test_api_cloud.py         # Tests end-to-end (Render)
+    ├── curl_examples.sh          # Exemples de commandes curl
+    └── conftest.py               # Configuration pytest
 ```
 
-## JSON Format
+---
 
-The maze is exported as a graph structure. Ghost house tiles are excluded from nodes and edges, but `walls` and `ghost_walls` are still included.
+## Web Service (API HTTP)
+
+### Lancer le serveur en local
+
+```bash
+python app.py
+```
+
+Le serveur tourne sur http://localhost:5000
+
+### Routes disponibles
+
+| Route | Méthode | Description |
+|-------|---------|-------------|
+| `/` | GET | Documentation de l'API |
+| `/health` | GET | Vérification que le service est en ligne |
+| `/maze` | GET | Génère un maze (seed aléatoire) |
+| `/maze?seed=42` | GET | Génère un maze reproductible |
+
+### Exemple de réponse `/maze?seed=42`
 
 ```json
 {
-  "nodes": [
-    {"id": "1_1", "x": 1, "y": 1, "type": "PATH"}
-  ],
-  "edges": [
-    {"from": "1_1", "to": "2_1"}
-  ],
-  "walls": [
-    {"x": 0, "y": 0}
-  ],
-  "ghost_walls": [
-    {"x": 12, "y": 14}
-  ],
+  "seed": 42,
+  "metadata": { "width": 28, "height": 31, "node_count": 324, "edge_count": 344 },
+  "nodes": [{"id": "1,1", "x": 1, "y": 1, "type": "PATH"}, "..."],
+  "edges": [{"from": "1,1", "to": "2,1"}, "..."],
+  "walls": [{"x": 0, "y": 0}, "..."],
+  "ghost_walls": [{"x": 13, "y": 12}, "..."]
+}
+```
+
+### Visualisation Pygame (client local)
+
+```bash
+# Depuis le cloud Render
+python client.py
+
+# Depuis le serveur local (lancer app.py d'abord)
+python client.py --local
+
+# Avec un seed fixe
+python client.py --seed 42
+
+# Changer la taille des cases
+python client.py --tile-size 16
+```
+
+**Contrôles :** `ESPACE` → nouveau maze | `Q` → quitter
+
+> Sur le plan gratuit Render, le service se met en veille après 15 min
+> d'inactivité. Le premier appel peut prendre 50 secondes.
+
+---
+
+## Génération en ligne de commande (local)
+
+```bash
+# Générer un maze (JSON + PNG + TXT)
+python generate.py
+
+# Avec seed fixe
+python generate.py --seed 42
+
+# Changer la taille des tuiles
+python generate.py -s 30
+
+# JSON uniquement
+python generate.py --json-only
+```
+
+Options complètes :
+- `-o, --output PATH` — dossier de sortie (défaut : `maze_[seed]/`)
+- `--seed SEED` — graine pour la reproductibilité
+- `-s, --size SIZE` — taille des tuiles en pixels (défaut : 20)
+- `--json-only` / `--png-only` / `--text-only`
+- `-v, --verbose`
+
+### Rendu depuis un JSON existant
+
+```bash
+python render_json.py maze_42/maze.json
+python render_json.py maze_42/maze.json -o output.png -s 30
+python render_json.py maze_42/maze.json --show-graph
+```
+
+### Score de complexité
+
+```bash
+python maze_complexity.py maze_42/maze.json
+```
+
+Le score est calculé via un algorithme greedy nearest-neighbor avec optimisation 2-opt.  
+**Formule :** `score = (food_count / steps) × 10` (plafonné à 10)
+
+### Visualisation animée du chemin
+
+```bash
+python maze_complexity_visualize.py maze_42/maze.json
+```
+
+---
+
+## Tests
+
+```bash
+pip install pytest requests
+
+# Tous les tests
+pytest tests/ -v
+
+# Tests fonctionnels uniquement (pas besoin de connexion internet)
+pytest tests/test_api_local.py -v
+
+# Tests des propriétés mathématiques du maze
+pytest tests/test_maze_properties.py -v
+
+# Tests end-to-end sur Render (nécessite connexion internet)
+pytest tests/test_api_cloud.py -v
+```
+
+---
+
+## Exemples curl
+
+Voir `tests/curl_examples.sh` pour la liste complète.
+
+```bash
+curl https://pacman-s2-h.onrender.com/health
+curl https://pacman-s2-h.onrender.com/maze
+curl https://pacman-s2-h.onrender.com/maze?seed=42
+```
+
+
+
+## Format JSON
+
+```json
+{
+  "nodes": [{"id": "1,1", "x": 1, "y": 1, "type": "PATH"}],
+  "edges": [{"from": "1,1", "to": "2,1"}],
+  "walls": [{"x": 0, "y": 0}],
+  "ghost_walls": [{"x": 12, "y": 14}],
   "metadata": {
     "width": 28,
     "height": 31,
@@ -147,16 +206,19 @@ The maze is exported as a graph structure. Ghost house tiles are excluded from n
       "steps": 385,
       "score": 8.36,
       "method": "greedy-nearest-with-2opt",
-      "wrap_tunnels": true,
-      "width": 28,
-      "height": 31,
-      "swap_iterations": 3220,
-      "improvements_applied": 2
+      "wrap_tunnels": true
     }
   }
 }
 ```
 
+---
+
 ## License
 
 See LICENSE file for details.
+
+---
+
+*Université Nice Côte d'Azur — M1 Informatique — TER S2*  
+*Encadrant : Pr. Gilles Menez*
