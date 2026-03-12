@@ -725,15 +725,7 @@ def compute_complexity_score(
         steps, order = _best_path(distances, start_idx, reachable, num_restarts)
         method = "ms-or3opt"
 
-    # 5.4 Expand path to tile positions
-    path_positions = _expand_node_order(adjacency, pos_list, order)
-    if not path_positions:
-        path_positions = [start]
-
-    # 5.5 Count turns
-    num_turns = count_turns(path_positions)
-
-    # 5.6 Find trap corridors
+    # 5.4 Find trap corridors
     trap_corridors, longest_trap, num_traps = find_trap_corridors(
         pos_list, adjacency, min_interior=TRAP_MIN_INTERIOR
     )
@@ -755,20 +747,11 @@ def compute_complexity_score(
 
     # 5.8 Return updated dict
     return {
-        "start":        {"x": start[0], "y": start[1]},
-        "steps":        steps,
         "score":        round(score, 4),
-        "method":       method,
-        "wrap_tunnels": wrap_tunnels,
-        # Signal values
-        "longest_trap":  longest_trap,
-        "avg_trap_len":  round(avg_trap_len, 4),
-        "num_traps":     num_traps,
-        "num_turns":     num_turns,
-        "s_steps":       round(s_steps,    6),
-        "s_trap_len":    round(s_trap_len, 6),
-        "s_trap_cnt":    round(s_trap_cnt, 6),
-        "trap_corridors": trap_corridors,
+        "steps":        steps,
+        "longest_trap": longest_trap,
+        "avg_trap_len": round(avg_trap_len, 4),
+        "num_traps":    num_traps,
     }
 
 
