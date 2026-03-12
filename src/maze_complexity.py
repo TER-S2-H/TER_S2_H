@@ -725,7 +725,13 @@ def compute_complexity_score(
         steps, order = _best_path(distances, start_idx, reachable, num_restarts)
         method = "ms-or3opt"
 
-    # 5.4 Find trap corridors
+    # 5.4 Count tunnel rows (horizontal wrap-around passages)
+    num_tunnels: int = sum(
+        1 for y in range(height)
+        if (0, y) in pos_to_idx and (width - 1, y) in pos_to_idx
+    )
+
+    # 5.5 Find trap corridors
     trap_corridors, longest_trap, num_traps = find_trap_corridors(
         pos_list, adjacency, min_interior=TRAP_MIN_INTERIOR
     )
@@ -745,13 +751,14 @@ def compute_complexity_score(
     combined = W_STEPS * s_steps + W_TRAP_LEN * s_trap_len + W_TRAP_CNT * s_trap_cnt
     score = (combined + 1.0) / 2.0 * 10.0
 
-    # 5.8 Return updated dict
+    # 5.9 Return updated dict
     return {
         "score":        round(score, 4),
         "steps":        steps,
         "longest_trap": longest_trap,
         "avg_trap_len": round(avg_trap_len, 4),
         "num_traps":    num_traps,
+        "num_tunnels":  num_tunnels,
     }
 
 
