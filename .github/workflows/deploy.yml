@@ -58,4 +58,4 @@ jobs:
       - name: Déclencher le déploiement sur Render
         run: |
           curl -s "${{ secrets.RENDER_DEPLOY_HOOK }}"
-          echo "Déploiement déclenché sur Render ✅"
+          echo "Déploiement déclenché sur Render "
