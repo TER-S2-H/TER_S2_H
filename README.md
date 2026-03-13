@@ -35,6 +35,9 @@ pip install -r requirements-client.txt
 ├── Procfile                      # Configuration Render
 ├── requirements.txt              # Dépendances serveur (Render)
 ├── requirements-client.txt       # Dépendances client local
+├── .github/
+│   └── workflows/
+│       └── deploy.yml            # CI/CD GitHub Actions
 ├── src/
 │   ├── pacman_map.py             # Logique de génération du maze
 │   ├── maze_renderer.py          # Rendu PNG
@@ -71,12 +74,25 @@ Le serveur tourne sur http://localhost:5000
 | `/maze` | GET | Génère un maze (seed aléatoire) |
 | `/maze?seed=42` | GET | Génère un maze reproductible |
 
-### Exemple de réponse `/maze?seed=42`
+### Format de réponse `/maze`
 
 ```json
 {
   "seed": 42,
-  "metadata": { "width": 28, "height": 31, "node_count": 324, "edge_count": 344 },
+  "metadata": {
+    "width": 28,
+    "height": 31,
+    "node_count": 326,
+    "edge_count": 347,
+    "complexity_score": {
+      "score": 2.89,
+      "steps": 403,
+      "longest_trap": 13,
+      "avg_trap_len": 10.32,
+      "num_traps": 19,
+      "num_tunnels": 1
+    }
+  },
   "nodes": [{"id": "1,1", "x": 1, "y": 1, "type": "PATH"}, "..."],
   "edges": [{"from": "1,1", "to": "2,1"}, "..."],
   "walls": [{"x": 0, "y": 0}, "..."],
@@ -185,32 +201,16 @@ curl https://pacman-s2-h.onrender.com/maze
 curl https://pacman-s2-h.onrender.com/maze?seed=42
 ```
 
+---
 
+## CI/CD
 
-## Format JSON
+Le fichier `.github/workflows/deploy.yml` automatise les déploiements sur Render.
 
-```json
-{
-  "nodes": [{"id": "1,1", "x": 1, "y": 1, "type": "PATH"}],
-  "edges": [{"from": "1,1", "to": "2,1"}],
-  "walls": [{"x": 0, "y": 0}],
-  "ghost_walls": [{"x": 12, "y": 14}],
-  "metadata": {
-    "width": 28,
-    "height": 31,
-    "node_count": 245,
-    "edge_count": 312,
-    "complexity_score": {
-      "start": {"x": 13, "y": 23},
-      "food_count": 322,
-      "steps": 385,
-      "score": 8.36,
-      "method": "greedy-nearest-with-2opt",
-      "wrap_tunnels": true
-    }
-  }
-}
-```
+À chaque push sur `main` :
+1. GitHub Actions lance les tests automatiquement (`test_api_local.py` + `test_maze_properties.py`)
+2. Si tous les tests passent → déploiement sur Render déclenché
+3. Si un test échoue → le déploiement est bloqué
 
 ---
 
@@ -221,4 +221,5 @@ See LICENSE file for details.
 ---
 
 *Université Nice Côte d'Azur — M1 Informatique — TER S2*  
-*Encadrant : Pr. Gilles Menez*
+*Encadrant : Pr. Gilles Menez*  
+*Membres : THEOLIEN Bierhoff, Hugo VIANA, JULES Stevenson*
