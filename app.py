@@ -84,7 +84,7 @@ def health():
     Réponse JSON :
       { "status": "ok" }
     """
-    return jsonify({"statut": "ok"}), 200
+    return jsonify({"status": "ok"}), 200
 
 
 # -------------------------------------------------------------------
