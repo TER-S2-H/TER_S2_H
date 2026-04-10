@@ -93,10 +93,11 @@ Le serveur tourne sur http://localhost:5000
       "num_tunnels": 1
     }
   },
-  "nodes": [{"id": "1,1", "x": 1, "y": 1, "type": "PATH"}, "..."],
+  "nodes": [{"x": 1, "y": 1, "type": "PATH"}, "..."],
   "edges": [{"from": "1,1", "to": "2,1"}, "..."],
   "walls": [{"x": 0, "y": 0}, "..."],
-  "ghost_walls": [{"x": 13, "y": 12}, "..."]
+  "ghost_walls": [{"x": 13, "y": 12}, "..."],
+  "energizers": [{"x": 26, "y": 5}, {"x": 26, "y": 25}]
 }
 ```
 
