@@ -1,4 +1,5 @@
 import sys
+import math
 import pygame
 
 from .environment import (
@@ -8,105 +9,91 @@ from .environment import (
 from .pacman_agent import PacManAgent
 from .ghost import Ghost, GHOST_COLORS
 from .recorder import Recorder
-from .agent import Direction
+from .agent import Direction, DIRECTION_VECTORS
 
-# ── Rendu ──────────────────────────────────────────────────────────────────
-TILE_SIZE     = 20          # pixels par case
-HEADER_HEIGHT = 40          # pixels réservés en haut pour score/vies
-FPS           = 10          # ticks de jeu par seconde
+# ── Timing ─────────────────────────────────────────────────────────────────
+FPS             = 60   # framerate de rendu (fluide)
+FRAMES_PER_TICK = 8    # tick logique tous les N frames → ≈7.5 déplacements/s
 
-# Palette
+# ── Mise en page ────────────────────────────────────────────────────────────
+TILE_SIZE     = 16    # taille d'une case en pixels (plus petit = blocs plus fins)
+HEADER_HEIGHT = 50
+
+# ── Rendu des blocs murs ─────────────────────────────────────────────────────
+WALL_MARGIN = 1                  # espace entre la case et le bloc dessiné (px)
+WALL_BR     = 5                  # border_radius (arrondi natif pygame, fiable)
+WALL_FILL   = (125, 165, 255,  0)   # intérieur transparent (0 = invisible)
+WALL_BORDER = ( 45,  75, 185, 220)  # bord : bleu foncé, opaque
+
 C = {
-    "bg":             (  0,   0,   0),
-    "wall":           ( 33,  33, 222),
-    "ghost_wall":     (255, 182, 193),
-    "pacman":         (255, 255,   0),
-    "pellet":         (255, 255, 255),
-    "power_pellet":   (255, 255, 255),
-    "frightened":     (  0,   0, 200),
-    "text":           (255, 255, 255),
-    "text_yellow":    (255, 255,   0),
-    "header_bg":      (  0,   0,   0),
+    "bg":           (  0,   0,   0),
+    "pacman":       (255, 220,   0),
+    "pellet":       (255, 185, 130),   # légèrement chaud
+    "power_pellet": (255, 255, 255),
+    "frightened":   ( 30,  30, 200),
+    "fright_blink": (200, 200, 255),
+    "text":         (255, 255, 255),
+    "text_yellow":  (255, 220,   0),
+    "ghost_wall":   (255, 182, 193),
+    "header_sep":   ( 33,  66, 255),
 }
 
-# Score à partir duquel on offre une vie bonus
 BONUS_LIFE_THRESHOLD = 10_000
 
 
 class Game:
     """
-    Boucle principale du jeu Pac-Man.
+    Boucle principale Pac-Man.
 
-    Architecture extensible
-    -----------------------
-    - Pour remplacer le contrôle clavier par une IA Pac-Man :
-        Passer une instance de sous-classe PacManAgent à Game (sans rien changer ici).
-    - Pour brancher une IA sur un fantôme :
-        Remplacer ghosts[i] par une instance de sous-classe Ghost (voir ghost.py).
-
-    Paramètres
-    ----------
-    seed   : int | None   — seed pour le générateur de labyrinthe
-    local  : bool         — utiliser localhost:5000 au lieu de Render
-    record : bool         — activer le Recorder (sauvegarde recording.json)
-    pacman_agent : PacManAgent | None — agent personnalisé (clavier par défaut)
+    Rendu à 60 FPS, tick logique tous les FRAMES_PER_TICK frames.
+    Pour modifier la vitesse : changer FRAMES_PER_TICK (plus grand = plus lent).
     """
 
-    def __init__(
-        self,
-        seed=None,
-        local: bool = False,
-        record: bool = False,
-        pacman_agent: PacManAgent | None = None,
-    ):
+    def __init__(self, seed=None, local=False, record=False,
+                 pacman_agent=None):
         self.base_url      = LOCAL_API_URL if local else CLOUD_API_URL
         self.seed          = seed
         self.record        = record
-        self._pacman_agent = pacman_agent   # None → instancié dans run()
+        self._pacman_agent = pacman_agent
         self._bonus_given  = False
+        self._frame        = 0
+        self._maze_surf    = None   # surface cachée du labyrinthe (murs)
 
-    # ------------------------------------------------------------------
-    # Boucle principale
-    # ------------------------------------------------------------------
-
-    def run(self) -> None:
+    # ── Boucle principale ────────────────────────────────────────────────────
+    def run(self):
         pygame.init()
 
-        # ── Environnement ──────────────────────────────────────────────
         env = Environment(seed=self.seed, base_url=self.base_url)
-        print("Chargement du labyrinthe depuis l'API…")
+        print("Chargement du labyrinthe…")
         try:
             env.load_maze()
-        except Exception as exc:
-            print(f"Erreur API : {exc}")
+        except Exception as e:
+            print(f"Erreur API : {e}")
             pygame.quit()
             sys.exit(1)
-        print(f"Labyrinthe chargé — seed: {env.seed}  ({env.width}×{env.height})")
+        print(f"seed={env.seed}  ({env.width}×{env.height})")
 
-        # ── Agents ────────────────────────────────────────────────────
         pacman = self._pacman_agent or PacManAgent()
         ghosts = [Ghost(i, gx, gy) for i, (gx, gy) in enumerate(GHOST_START_POSITIONS)]
         env.ghosts = ghosts
-
-        # ── Recorder ──────────────────────────────────────────────────
         recorder = Recorder(seed=env.seed) if self.record else None
 
-        # ── Fenêtre pygame ────────────────────────────────────────────
         win_w = env.width  * TILE_SIZE
         win_h = env.height * TILE_SIZE + HEADER_HEIGHT
         screen = pygame.display.set_mode((win_w, win_h))
         pygame.display.set_caption(f"Pac-Man  —  seed {env.seed}")
         clock = pygame.time.Clock()
-        font     = pygame.font.SysFont("monospace", 15, bold=True)
-        font_big = pygame.font.SysFont("monospace", 30, bold=True)
+        font     = pygame.font.SysFont("monospace", 14, bold=True)
+        font_big = pygame.font.SysFont("monospace", 32, bold=True)
 
         paused  = False
         running = True
 
         while running:
             clock.tick(FPS)
+            self._frame += 1
 
-            # ── Événements pygame ──────────────────────────────────────
+            # ── Événements ────────────────────────────────────────────────
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
@@ -115,7 +102,6 @@ class Game:
                         running = False
                     if event.key == pygame.K_p:
                         paused = not paused
-                    # R = rejouer (uniquement sur l'écran game over)
                     if event.key == pygame.K_r and env.game_over:
                         env = Environment(seed=self.seed, base_url=self.base_url)
                         env.load_maze()
@@ -124,131 +110,257 @@ class Game:
                         env.ghosts = ghosts
                         pacman = self._pacman_agent or PacManAgent()
                         self._bonus_given = False
+                        self._frame = 0
+                        self._maze_surf = None
                         if self.record:
                             recorder = Recorder(seed=env.seed)
                         pygame.display.set_caption(f"Pac-Man  —  seed {env.seed}")
                     pacman.handle_event(event)
 
-            # ── Écrans d'état ──────────────────────────────────────────
+            # ── Game Over ──────────────────────────────────────────────────
             if env.game_over:
                 self._draw(screen, env, font)
                 msg  = font_big.render("GAME OVER", True, (255, 0, 0))
                 hint = font.render("R = rejouer  |  Q = quitter", True, C["text"])
-                screen.blit(msg,  (win_w // 2 - msg.get_width()  // 2,
-                                   win_h // 2 - msg.get_height() // 2))
-                screen.blit(hint, (win_w // 2 - hint.get_width() // 2,
-                                   win_h // 2 + msg.get_height()))
+                screen.blit(msg,  (win_w//2 - msg.get_width()//2,
+                                   win_h//2 - msg.get_height()//2))
+                screen.blit(hint, (win_w//2 - hint.get_width()//2,
+                                   win_h//2 + msg.get_height()))
                 pygame.display.flip()
                 continue
 
+            # ── Pause ──────────────────────────────────────────────────────
             if paused:
                 self._draw(screen, env, font)
                 msg = font_big.render("PAUSE", True, C["text_yellow"])
-                screen.blit(msg, (win_w // 2 - msg.get_width() // 2,
-                                  win_h // 2 - msg.get_height() // 2))
+                screen.blit(msg, (win_w//2 - msg.get_width()//2,
+                                  win_h//2 - msg.get_height()//2))
                 pygame.display.flip()
                 continue
 
-            # ── Passage au niveau suivant ──────────────────────────────
+            # ── Niveau suivant ─────────────────────────────────────────────
             if env.level_complete:
                 env.next_level()
-                self._bonus_given = False   # reset pour le nouveau niveau
+                self._bonus_given = False
+                self._maze_surf = None   # reconstruire la surface du labyrinthe
                 continue
 
-            # ── Collecte des actions ───────────────────────────────────
-            state = env.get_state()
-            actions = {"pacman": pacman.get_action(state)}
-            for i, ghost in enumerate(ghosts):
-                actions[f"ghost_{i}"] = ghost.get_action(state)
+            # ── Tick logique (pas à chaque frame) ─────────────────────────
+            if self._frame % FRAMES_PER_TICK == 0:
+                state = env.get_state()
+                actions = {"pacman": pacman.get_action(state)}
+                for i, g in enumerate(ghosts):
+                    actions[f"ghost_{i}"] = g.get_action(state)
 
-            # ── Mise à jour du monde ───────────────────────────────────
-            events = env.update(actions)
+                env.update(actions)
+                pacman.confirm_direction(env.pacman_dir)
 
-            # Confirmer la direction effective à Pac-Man
-            pacman.confirm_direction(env.pacman_dir)
+                if not self._bonus_given and env.score >= BONUS_LIFE_THRESHOLD:
+                    env.lives += 1
+                    self._bonus_given = True
+                    print("[Game] Vie bonus accordée !")
 
-            # Vie bonus à 10 000 pts
-            if not self._bonus_given and env.score >= BONUS_LIFE_THRESHOLD:
-                env.lives += 1
-                self._bonus_given = True
-                print("[Game] Vie bonus accordée !")
+                if recorder:
+                    recorder.record(actions, env.get_grid_snapshot())
 
-            # ── Enregistrement ────────────────────────────────────────
-            if recorder:
-                recorder.record(actions, env.get_grid_snapshot())
-
-            # ── Rendu ─────────────────────────────────────────────────
+            # ── Rendu (chaque frame pour la fluidité) ─────────────────────
             self._draw(screen, env, font)
             pygame.display.flip()
 
-        # ── Fin ───────────────────────────────────────────────────────
         if recorder:
             recorder.save("recording.json")
-
         pygame.quit()
         sys.exit(0)
 
-    # ------------------------------------------------------------------
-    # Rendu
-    # ------------------------------------------------------------------
-
-    def _draw(self, screen: pygame.Surface, env: Environment,
-              font: pygame.font.Font) -> None:
+    # ── Rendu principal ──────────────────────────────────────────────────────
+    def _draw(self, screen, env, font):
         screen.fill(C["bg"])
-        oy = HEADER_HEIGHT   # offset vertical pour le plateau
+        oy = HEADER_HEIGHT   # offset vertical : le plateau commence après le header
 
-        # ── Murs ──────────────────────────────────────────────────────
-        for (x, y) in env.walls:
-            pygame.draw.rect(screen, C["wall"],
-                             (x * TILE_SIZE, y * TILE_SIZE + oy,
-                              TILE_SIZE, TILE_SIZE))
+        # Murs (cachés sur une surface statique)
+        maze_surf = self._get_maze_surf(env)
+        screen.blit(maze_surf, (0, oy))
 
-        # ── Porte de la maison des fantômes ───────────────────────────
+        self._draw_ghost_door(screen, env, oy)
+        self._draw_pellets(screen, env, oy)
+
+        for i, ghost in enumerate(env.ghosts):
+            self._draw_ghost(screen, ghost, i, env.frightened_timer, oy)
+
+        self._draw_pacman(screen, env, oy)
+        self._draw_header(screen, env, font)
+
+    # ── Cache du labyrinthe ──────────────────────────────────────────────────
+    def _get_maze_surf(self, env):
+        """
+        Pré-rend les murs sur une surface SRCALPHA (recalculé une fois par niveau).
+
+        Chaque cellule-mur est dessinée comme un rectangle arrondi :
+          • Fill  : bleu pâle, assez translucide  → l'intérieur du bloc est clair
+          • Bord  : bleu foncé, plus opaque        → contour bien visible
+          • border_radius natif de pygame           → arrondi parfait, sans arcs manuels
+
+        La marge (WALL_MARGIN) entre la case et le rect visuel fait paraître
+        chaque bloc plus petit, et laisse un léger espace entre blocs adjacents.
+        """
+        if self._maze_surf is not None:
+            return self._maze_surf
+
+        TS = TILE_SIZE
+        M  = WALL_MARGIN
+        BR = WALL_BR
+
+        w = env.width  * TS
+        h = env.height * TS
+
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        surf.fill((0, 0, 0, 0))   # fond transparent (le noir du jeu transparaît)
+
+        for (wx, wy) in env.walls:
+            rect = pygame.Rect(wx*TS + M, wy*TS + M, TS - 2*M, TS - 2*M)
+            # 1) intérieur pâle et translucide
+            pygame.draw.rect(surf, WALL_FILL,   rect, border_radius=BR)
+            # 2) contour foncé et épais
+            pygame.draw.rect(surf, WALL_BORDER, rect, width=3, border_radius=BR)
+
+        self._maze_surf = surf
+        return surf
+
+    # ── Porte de la maison des fantômes ─────────────────────────────────────
+    def _draw_ghost_door(self, screen, env, oy):
+        TS = TILE_SIZE
         for (x, y) in env.ghost_walls:
-            mid_y = y * TILE_SIZE + oy + TILE_SIZE // 2 - 1
-            pygame.draw.rect(screen, C["ghost_wall"],
-                             (x * TILE_SIZE, mid_y, TILE_SIZE, 3))
+            mid = y*TS + oy + TS//2 - 1
+            pygame.draw.line(screen, C["ghost_wall"],
+                             (x*TS, mid), (x*TS + TS, mid), 3)
 
-        # ── Pellets ───────────────────────────────────────────────────
+    # ── Pellets ──────────────────────────────────────────────────────────────
+    def _draw_pellets(self, screen, env, oy):
+        TS = TILE_SIZE
+        # Power pellets clignotent (off pendant 8 frames sur 30)
+        power_visible = (self._frame % 30) < 22
+
         for (px, py), pellet in env.pellets.items():
-            cx = px * TILE_SIZE + TILE_SIZE // 2
-            cy = py * TILE_SIZE + TILE_SIZE // 2 + oy
+            cx = px*TS + TS//2
+            cy = py*TS + TS//2 + oy
             if pellet.type == "power":
-                pygame.draw.circle(screen, C["power_pellet"], (cx, cy),
-                                   TILE_SIZE // 4)
+                if power_visible:
+                    pygame.draw.circle(screen, C["power_pellet"], (cx, cy), TS//4)
             else:
                 pygame.draw.circle(screen, C["pellet"], (cx, cy), 2)
 
-        # ── Fantômes ──────────────────────────────────────────────────
-        for i, ghost in enumerate(env.ghosts):
-            cx = ghost.x * TILE_SIZE + TILE_SIZE // 2
-            cy = ghost.y * TILE_SIZE + TILE_SIZE // 2 + oy
-            color = C["frightened"] if ghost.frightened \
-                else GHOST_COLORS[i % len(GHOST_COLORS)]
-            # Corps (demi-cercle + rectangle)
-            r = TILE_SIZE // 2 - 1
-            pygame.draw.circle(screen, color, (cx, cy - r // 2), r)
-            pygame.draw.rect(screen, color,
-                             (cx - r, cy - r // 2, r * 2, r + 1))
+    # ── Pac-Man avec bouche animée ───────────────────────────────────────────
+    def _draw_pacman(self, screen, env, oy):
+        TS  = TILE_SIZE
+        r   = TS//2 - 1
+        cx  = env.pacman_x * TS + TS//2
+        cy  = env.pacman_y * TS + TS//2 + oy
 
-        # ── Pac-Man ───────────────────────────────────────────────────
-        cx = env.pacman_x * TILE_SIZE + TILE_SIZE // 2
-        cy = env.pacman_y * TILE_SIZE + TILE_SIZE // 2 + oy
-        pygame.draw.circle(screen, C["pacman"], (cx, cy), TILE_SIZE // 2 - 1)
+        # Angle d'ouverture de la bouche : oscille entre 4° et 42°
+        mouth_deg = abs(math.sin(self._frame * 0.18)) * 38 + 4
+        mouth_rad = math.radians(mouth_deg)
 
-        # ── En-tête (score / vies / niveau) ───────────────────────────
-        pygame.draw.rect(screen, C["header_bg"],
+        # Angle de base selon la direction
+        # Convention : (cx + r*cos(a), cy - r*sin(a)) → y inversé pour l'écran
+        dir_angle = {
+            Direction.RIGHT:  0,
+            Direction.LEFT:   math.pi,
+            Direction.UP:     math.pi / 2,
+            Direction.DOWN:  -math.pi / 2,
+            Direction.NONE:   0,
+        }.get(env.pacman_dir, 0)
+
+        # Arc du corps (360° moins l'ouverture de la bouche)
+        a_start  = dir_angle + mouth_rad
+        arc_span = 2*math.pi - 2*mouth_rad
+        n = 24
+
+        pts = [(cx, cy)]   # centre
+        for i in range(n + 1):
+            a = a_start + arc_span * i / n
+            pts.append((cx + r*math.cos(a),
+                        cy - r*math.sin(a)))   # -sin : y croît vers le bas
+
+        pygame.draw.polygon(screen, C["pacman"], pts)
+
+    # ── Fantôme style arcade ─────────────────────────────────────────────────
+    def _draw_ghost(self, screen, ghost, idx, frightened_timer, oy):
+        TS = TILE_SIZE
+        r  = TS//2 - 1
+        cx = ghost.x * TS + TS//2
+        cy = ghost.y * TS + TS//2 + oy
+
+        # Couleur du corps
+        if ghost.frightened:
+            # Clignote en blanc quand le timer est bas (< 20 ticks)
+            if frightened_timer < 20 and (self._frame // 6) % 2:
+                body_color = C["fright_blink"]
+            else:
+                body_color = C["frightened"]
+        else:
+            body_color = GHOST_COLORS[idx % len(GHOST_COLORS)]
+
+        # ── Corps : dôme (cercle) + rectangle inférieur ──────────────────
+        pygame.draw.circle(screen, body_color, (cx, cy), r)
+        pygame.draw.rect(screen, body_color, (cx-r, cy, r*2, r))
+
+        # ── Jupe festonnée : 3 petits cercles noirs en bas ───────────────
+        seg = (r * 2 + 2) // 3
+        for i in range(3):
+            bx = cx - r + i*seg + seg//2
+            pygame.draw.circle(screen, C["bg"], (bx, cy + r), seg//2 + 1)
+
+        # ── Yeux ─────────────────────────────────────────────────────────
+        ew = max(r // 3, 2)   # rayon du blanc de l'œil
+        ep = max(ew // 2, 1)  # rayon de la pupille
+
+        for ex in [cx - r//3, cx + r//3]:
+            if ghost.frightened:
+                # Yeux rouges anguleux en mode frightened
+                pygame.draw.circle(screen, (200, 30, 30), (ex, cy - r//5), ep + 1)
+            else:
+                # Blanc de l'œil
+                ey = cy - r // 3
+                pygame.draw.circle(screen, (255, 255, 255), (ex, ey), ew)
+                # Pupille orientée vers la direction de déplacement
+                dv = DIRECTION_VECTORS.get(ghost._last_direction, (0, 0))
+                dx, dy = dv if dv != (0, 0) else (1, 0)
+                px = ex + dx * (ew - ep)
+                py = ey + dy * (ew - ep)
+                pygame.draw.circle(screen, (0, 0, 210), (px, py), ep)
+
+    # ── En-tête style arcade ─────────────────────────────────────────────────
+    def _draw_header(self, screen, env, font):
+        pygame.draw.rect(screen, C["bg"],
                          (0, 0, screen.get_width(), HEADER_HEIGHT))
+        # Ligne séparatrice lumineuse
+        pygame.draw.line(screen, C["header_sep"],
+                         (0, HEADER_HEIGHT - 1),
+                         (screen.get_width(), HEADER_HEIGHT - 1), 1)
 
-        score_s = font.render(f"Score: {env.score}", True, C["text"])
-        lives_s = font.render(f"Vies: {env.lives}", True, C["text"])
-        level_s = font.render(f"Niveau: {env.level}", True, C["text_yellow"])
+        # Score à gauche
+        score_s = font.render(f"SCORE  {env.score:>6}", True, C["text_yellow"])
+        screen.blit(score_s, (10, HEADER_HEIGHT//2 - score_s.get_height()//2))
 
-        screen.blit(score_s, (10,  12))
-        screen.blit(lives_s, (200, 12))
-        screen.blit(level_s, (370, 12))
+        # Niveau centré
+        level_s = font.render(f"NIVEAU {env.level}", True, C["text"])
+        screen.blit(level_s, (screen.get_width()//2 - level_s.get_width()//2,
+                               HEADER_HEIGHT//2 - level_s.get_height()//2))
 
+        # Vies à droite : petits Pac-Man dessinés
+        r_life = 7
+        for i in range(env.lives):
+            lx = screen.get_width() - 15 - i * (r_life*2 + 4)
+            ly = HEADER_HEIGHT // 2
+            pts = [(lx, ly)]
+            for j in range(25):
+                a = math.radians(35 + 290 * j / 24)
+                pts.append((lx + r_life*math.cos(a),
+                             ly - r_life*math.sin(a)))
+            pygame.draw.polygon(screen, C["pacman"], pts)
+
+        # Timer frightened (petit indicateur)
         if env.frightened_timer > 0:
-            ft = font.render(f"Frightened: {env.frightened_timer}", True,
-                             C["frightened"])
-            screen.blit(ft, (500, 12))
+            ft = font.render(f"★{env.frightened_timer:>3}", True, C["fright_blink"])
+            screen.blit(ft, (screen.get_width()//2 + 80,
+                              HEADER_HEIGHT//2 - ft.get_height()//2))

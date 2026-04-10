@@ -25,3 +25,6 @@ output/
 .DS_Store
 Thumbs.db
 generated_maze/
+
+# Environment variables (credentials locales — ne jamais committer)
+.env

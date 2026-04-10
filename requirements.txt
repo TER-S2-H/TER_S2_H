@@ -5,3 +5,5 @@ pillow
 gunicorn
 requests
 pygame
+pymongo[srv]
+python-dotenv
