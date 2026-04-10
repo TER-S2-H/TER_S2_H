@@ -3,3 +3,5 @@ numpy
 flask
 pillow
 gunicorn
+requests
+pygame
