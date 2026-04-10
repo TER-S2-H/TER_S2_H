@@ -88,7 +88,15 @@ class TestMaze:
         """La réponse doit contenir toutes les clés attendues."""
         response = client.get("/maze")
         data = response.get_json()
-        for key in ["seed", "metadata", "nodes", "edges", "walls", "ghost_walls"]:
+        for key in [
+            "seed",
+            "metadata",
+            "nodes",
+            "edges",
+            "walls",
+            "ghost_walls",
+            "energizers",
+        ]:
             assert key in data, f"Clé manquante dans la réponse : {key}"
 
     def test_metadata_contient_dimensions(self, client):
@@ -98,6 +106,20 @@ class TestMaze:
         meta = data["metadata"]
         assert "width" in meta
         assert "height" in meta
+
+    def test_metadata_contient_compteur_energizers(self, client):
+        """La metadata doit inclure le nombre d'energizers."""
+        response = client.get("/maze")
+        data = response.get_json()
+        meta = data["metadata"]
+        assert "energizer_count" in meta
+        assert meta["energizer_count"] == len(data["energizers"])
+
+    def test_energizers_attendus(self, client):
+        """Le maze contient 2 ou 4 energizers selon les ranges valides."""
+        response = client.get("/maze")
+        data = response.get_json()
+        assert len(data["energizers"]) in {2, 4}
 
     def test_dimensions_pac_man(self, client):
         response = client.get("/maze")
