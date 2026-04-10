@@ -45,7 +45,8 @@ def build_adjacency(maze_data):
     """
     adjacency = {}
     for node in maze_data["nodes"]:
-        adjacency[node["id"]] = []
+        node_key = f"{node['x']},{node['y']}"
+        adjacency[node_key] = []
 
     for edge in maze_data["edges"]:
         a, b = edge["from"], edge["to"]
@@ -86,17 +87,17 @@ class TestStructureJSON:
             assert "x" in node, f"Noeud sans x : {node}"
             assert "y" in node, f"Noeud sans y : {node}"
 
-    def test_nodes_ont_id(self, maze_data):
-        """Chaque noeud doit avoir un identifiant unique."""
-        ids = [node["id"] for node in maze_data["nodes"]]
-        assert len(ids) == len(set(ids)), "Des noeuds ont des IDs dupliqués !"
+    def test_nodes_nont_pas_id(self, maze_data):
+        """Le champ id est redondant et ne doit plus etre exporte."""
+        for node in maze_data["nodes"]:
+            assert "id" not in node
 
     def test_edges_referencent_noeuds_existants(self, maze_data):
         """
         Chaque arête doit référencer des noeuds qui existent dans la liste.
         Un edge vers un noeud inexistant = bug dans le générateur.
         """
-        node_ids = {node["id"] for node in maze_data["nodes"]}
+        node_ids = {f"{node['x']},{node['y']}" for node in maze_data["nodes"]}
         for edge in maze_data["edges"]:
             assert edge["from"] in node_ids, \
                 f"Edge 'from' pointe vers un noeud inexistant : {edge['from']}"

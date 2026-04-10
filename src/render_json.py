@@ -86,15 +86,19 @@ class JSONMazeRenderer:
         
         # Optionally draw graph visualization
         if show_graph:
+            def parse_node_id(node_id: str) -> Tuple[int, int]:
+                x_str, y_str = node_id.split(',')
+                return int(x_str), int(y_str)
+
             # Draw edges first (so they appear behind nodes)
             for edge in maze_data['edges']:
-                from_node = next(n for n in maze_data['nodes'] if n['id'] == edge['from'])
-                to_node = next(n for n in maze_data['nodes'] if n['id'] == edge['to'])
-                
-                from_x = from_node['x'] * self.tile_size + self.tile_size // 2
-                from_y = from_node['y'] * self.tile_size + self.tile_size // 2
-                to_x = to_node['x'] * self.tile_size + self.tile_size // 2
-                to_y = to_node['y'] * self.tile_size + self.tile_size // 2
+                from_pos = parse_node_id(edge['from'])
+                to_pos = parse_node_id(edge['to'])
+
+                from_x = from_pos[0] * self.tile_size + self.tile_size // 2
+                from_y = from_pos[1] * self.tile_size + self.tile_size // 2
+                to_x = to_pos[0] * self.tile_size + self.tile_size // 2
+                to_y = to_pos[1] * self.tile_size + self.tile_size // 2
                 
                 draw.line([from_x, from_y, to_x, to_y], fill=self.edge_color, width=1)
             
