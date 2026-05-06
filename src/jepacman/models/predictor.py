@@ -32,3 +32,8 @@ class Predictor(nn.Module):
 
         x = self.transformer(tokens)                     # [B, T, d_model]
         return x[:, -1, :]                               # [B, d_model]
+    
+    def forward_with_latent(self, seq, latent):
+        # latent : [B, d_model] — vecteur continu
+        # utilisé pour les niveaux 2 et 3
+        return self._forward(seq, latent)
