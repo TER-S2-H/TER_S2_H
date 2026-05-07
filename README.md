@@ -118,6 +118,29 @@ python client.py --tile-size 16
 
 **Contrôles :** `ESPACE` → nouveau maze | `Q` → quitter
 
+---
+
+## Jeu Pac-Man
+
+```bash
+# Labyrinthe aléatoire (API Render)
+python main.py
+
+# Seed fixe
+python main.py --seed 42
+
+# API locale (lancer app.py d'abord)
+python main.py --local
+
+# Seed fixe en local
+python main.py --local --seed 42
+
+# Enregistrer la partie
+python main.py --record
+```
+
+**Contrôles :** `Flèches / WASD` → déplacer Pac-Man | `P` → pause | `Q / Échap` → quitter
+
 > Sur le plan gratuit Render, le service se met en veille après 15 min
 > d'inactivité. Le premier appel peut prendre 50 secondes.
 
