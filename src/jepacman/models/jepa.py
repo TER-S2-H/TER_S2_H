@@ -12,16 +12,20 @@ from models.predictor import Predictor
 class HierarchicalJEPAcman(nn.Module):
     def __init__(
         self,
-        case_dim: int = 9,
-        n_actions: int = 4,
+        case_dim: int = 8,
+        n_actions: int = 5,
         d_model: int = 128,
         seq_len: int = 128,
         n_heads_state: int = 2,
         n_layers_state: int = 2,
         n_heads_seq: int = 4,
         n_layers_seq: int = 4,
-        n_heads_pred: int = 2,
-        n_layers_pred: int = 2,
+        n_heads_pred_1: int = 2,
+        n_layers_pred_1: int = 2,
+        n_heads_pred_2: int = 2,
+        n_layers_pred_2: int = 2,
+        n_heads_pred_3: int = 2,
+        n_layers_pred_3: int = 2,
         ema_momentum: float = 0.996,
         k: int = 4,    # horizon niveau 2
         j: int = 16,   # horizon niveau 3
@@ -52,14 +56,14 @@ class HierarchicalJEPAcman(nn.Module):
         # ── Predicteurs — même architecture, horizons différents ─────────────
 
         # Niveau 1 — prédit e_{t+1}, conditionné par action (d_model)
-        self.predictor_1 = Predictor(n_actions, d_model, n_heads_pred, n_layers_pred)
+        self.predictor_1 = Predictor(n_actions, d_model, n_heads_pred_1, n_layers_pred_1)
 
         # Niveau 2 — prédit e_{t+k}, conditionné par g_k (d_model)
         # même architecture, le conditionnement est un vecteur d_model dans les deux cas
-        self.predictor_2 = Predictor(n_actions, d_model, n_heads_pred, n_layers_pred)
+        self.predictor_2 = Predictor(n_actions, d_model, n_heads_pred_2, n_layers_pred_2)
 
         # Niveau 3 — prédit e_{t+j}, conditionné par g_j (d_model)
-        self.predictor_3 = Predictor(n_actions, d_model, n_heads_pred, n_layers_pred)
+        self.predictor_3 = Predictor(n_actions, d_model, n_heads_pred_3, n_layers_pred_3)
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -68,26 +72,27 @@ class HierarchicalJEPAcman(nn.Module):
         # positions : [B, N, 2]
         encoder = self.state_encoder if online else self.target_encoder
         return encoder(cases, positions)   # [B, d_model]
+    
+    def _sanitize_actions(self, actions):
+        # Remplacer -1 (stayed) par 4
+        return actions.masked_fill(actions == -1, 4)
 
-    def encode_sequence(self, cases, positions, actions):
-        # cases     : [B, T, N, case_dim]
-        # positions : [B, T, N, 2]
-        # actions   : [B, T]
+
+    def encode_sequence(self, cases, positions, actions, pad_masks=None):
+        actions = self._sanitize_actions(actions)
         B, T, N, _ = cases.shape
 
-        # ViT sur chaque état
+        masks = pad_masks.view(B * T, N) if pad_masks is not None else None
+
         state_tokens = self.state_encoder(
             cases.view(B * T, N, -1),
-            positions.view(B * T, N, 2)
-        ).view(B, T, -1)                           # [B, T, d_model]
+            positions.view(B * T, N, 2),
+            pad_mask=masks
+        ).view(B, T, -1)
 
-        # Positional encoding TEM — actions passées
-        structural_codes = self.tem(actions)        # [B, T, d_model]
-
-        # Binding contenu + structure
-        tokens = state_tokens + structural_codes    # [B, T, d_model]
-
-        return self.seq_encoder(tokens)            # [B, T, d_model]
+        structural_codes = self.tem(actions)
+        tokens = state_tokens + structural_codes
+        return self.seq_encoder(tokens)
 
     def compute_gk(self, actions_future):
         # actions_future : [B, k] — k actions futures réelles
@@ -97,51 +102,39 @@ class HierarchicalJEPAcman(nn.Module):
 
     # ── Phase 1 — entraîner encoder + predictor 1 ────────────────────────────
 
-    def forward_level1(self, cases, positions, actions, cases_next, positions_next, action_next):
-        # Encoder la séquence — gradient activé
-        seq = self.encode_sequence(cases, positions, actions)       # [B, T, d_model]
+    def forward_level1(self, cases, positions, pad_masks, actions,
+                   cases_next, pos_next, pad_next, action_next):
+        seq = self.encode_sequence(cases, positions, actions, pad_masks)
+        e_pred = self.predictor_1(seq, action_next)
 
-        # Prédire e_{t+1} avec l'action réelle
-        e_pred = self.predictor_1(seq, action_next)                 # [B, d_model]
-
-        # Target — état réel t+1, pas de gradient
         with torch.no_grad():
-            e_target = self.target_encoder(cases_next, positions_next)  # [B, d_model]
+            e_target = self.target_encoder(cases_next, pos_next, pad_mask=pad_next)
 
         return F.mse_loss(e_pred, e_target)
 
-    # ── Phase 2 — encoder gelé, entraîner predicteurs 2 et 3 ─────────────────
-
-    def forward_level2(self, cases, positions, actions, cases_tk, positions_tk, actions_future_k):
-        # cases_tk          : [B, N, case_dim]  — état réel à t+k
-        # actions_future_k  : [B, k]            — k actions réelles entre t et t+k
-
-        # Encoder la séquence — encoder gelé
+    def forward_level2(self, cases, positions, pad_masks, actions,
+                    cases_tk, pos_tk, pad_tk, actions_future_k):
         with torch.no_grad():
-            seq = self.encode_sequence(cases, positions, actions)   # [B, T, d_model]
-            g_k = self.compute_gk(actions_future_k)                 # [B, d_model]
+            seq = self.encode_sequence(cases, positions, actions, pad_masks)
+            g_k = self.compute_gk(actions_future_k)
 
-        # Prédire e_{t+k} conditionné par g_k
-        e_pred = self.predictor_2.forward_with_latent(seq, g_k)     # [B, d_model]
+        e_pred = self.predictor_2.forward_with_latent(seq, g_k)
 
-        # Target — état réel à t+k
         with torch.no_grad():
-            e_target = self.target_encoder(cases_tk, positions_tk)  # [B, d_model]
+            e_target = self.target_encoder(cases_tk, pos_tk, pad_mask=pad_tk)
 
         return F.mse_loss(e_pred, e_target)
 
-    def forward_level3(self, cases, positions, actions, cases_tj, positions_tj, actions_future_j):
-        # cases_tj          : [B, N, case_dim]  — état réel à t+j
-        # actions_future_j  : [B, j]            — j actions réelles entre t et t+j
+    def forward_level3(self, cases, positions, pad_masks, actions,
+                    cases_tj, pos_tj, pad_tj, actions_future_j):
+        with torch.no_grad():
+            seq = self.encode_sequence(cases, positions, actions, pad_masks)
+            g_j = self.compute_gk(actions_future_j)
+
+        e_pred = self.predictor_3.forward_with_latent(seq, g_j)
 
         with torch.no_grad():
-            seq = self.encode_sequence(cases, positions, actions)   # [B, T, d_model]
-            g_j = self.compute_gk(actions_future_j)                 # [B, d_model]
-
-        e_pred = self.predictor_3.forward_with_latent(seq, g_j)     # [B, d_model]
-
-        with torch.no_grad():
-            e_target = self.target_encoder(cases_tj, positions_tj)  # [B, d_model]
+            e_target = self.target_encoder(cases_tj, pos_tj, pad_mask=pad_tj)
 
         return F.mse_loss(e_pred, e_target)
 

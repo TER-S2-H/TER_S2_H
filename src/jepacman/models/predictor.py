@@ -4,7 +4,7 @@ import torch.nn as nn
 class Predictor(nn.Module):
     def __init__(
         self,
-        n_actions: int = 4,
+        n_actions: int = 5,
         d_model: int = 128,
         n_heads: int = 2,
         n_layers: int = 2,

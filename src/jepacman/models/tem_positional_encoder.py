@@ -4,7 +4,7 @@ import torch.nn as nn
 class TEMPositionalEncoder(nn.Module):
     def __init__(
         self,
-        n_actions: int = 4, # une matrice de transition par action
+        n_actions: int = 5, # une matrice de transition par action
         d_model: int = 128, # Identique aux modules précédents pour la compatibilité
     ):
         super().__init__()

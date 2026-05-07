@@ -4,8 +4,7 @@ import torch.nn as nn
 class StateEncoder(nn.Module):
     def __init__(
         self,
-        case_dim: int = 9,      # Taille du vecteur d'une case
-                                 # contenu (5) + murs (4) = 9
+        case_dim: int = 8,      # Taille du vecteur d'une case
         d_model: int = 128,      # Taille des vecteurs internes du transformer
         n_heads: int = 2,        # Nombre de têtes d'attention
         n_layers: int = 2,       # Nombre de couches de transformer
@@ -50,8 +49,12 @@ class StateEncoder(nn.Module):
         cls = self.cls_token.expand(B, 1, -1)
         x = torch.cat([cls, x], dim=1)
         # [B, N+1, d_model]
+        
+        if pad_mask is not None:
+            cls_mask = torch.zeros(B, 1, dtype=torch.bool, device=pad_mask.device)
+            pad_mask = torch.cat([cls_mask, pad_mask], dim=1)  # [B, N+1]
 
-        x = self.transformer(x)
+        x = self.transformer(x, src_key_padding_mask=pad_mask)
 
         # Retourner uniquement le CLS token
         return x[:, 0, :]
