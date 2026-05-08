@@ -22,10 +22,10 @@ class SequenceEncoder(nn.Module):
             dim_feedforward=d_model * 4,
             batch_first=True
         )
-        self.transformer = nn.TransformerEncoder(layer, num_layers=n_layers)
+        self.transformer = nn.TransformerEncoder(layer, num_layers=n_layers, enable_nested_tensor=False)
 
         # Masque causal — le token t ne voit pas t+1, t+2...
-        mask = nn.Transformer.generate_square_subsequent_mask(seq_len)
+        mask = nn.Transformer.generate_square_subsequent_mask(seq_len).bool()
         self.register_buffer("causal_mask", mask)
 
     def forward(self, tokens):

@@ -11,6 +11,7 @@ python-dotenv
 torch>=2.0.0
 pytorch-lightning>=2.0.0
 optuna>=3.0.0
+lightning
 optuna-integration[pytorch_lightning]
 plotly>=5.0.0        # pour les visualisations optuna
 kaleido             # export des figures plotly en HTML

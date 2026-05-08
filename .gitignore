@@ -28,3 +28,7 @@ generated_maze/
 
 # Environment variables (credentials locales — ne jamais committer)
 .env
+
+jepa_sessions/
+sessions/
+lightning_logs/

@@ -4,6 +4,9 @@
 
 set -e
 
+export PYTHONPATH="$PWD/src:$PYTHONPATH"
+export PYTORCH_ENABLE_MPS_FALLBACK=1
+export PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0
 # ── Paramètres ────────────────────────────────────────────────────────────────
 N_MAZES=10
 N_SESSIONS=1000
@@ -35,11 +38,11 @@ echo "=== Étape 1 : Génération des labyrinthes ==="
 
 if [ -z "$SEEDS" ]; then
     for i in $(seq 1 $N_MAZES); do
-        python $SRC/generate.py -o $MAZE_DIR --verbose
+        python -m src.generate -o $MAZE_DIR/maze_${RANDOM} --verbose
     done
 else
     for seed in $SEEDS; do
-        python $SRC/generate.py -o $MAZE_DIR --seed $seed --verbose
+        python -m src.generate -o $MAZE_DIR/maze_${seed} --seed $seed --verbose
     done
 fi
 
@@ -89,7 +92,7 @@ if [ ! -z "$STORAGE" ]; then
     STORAGE_ARG="--storage $STORAGE"
 fi
 
-python $SRC/jepacman/train.py $JEPA_DIR $STORAGE_ARG
+python -m src.jepacman.train $JEPA_DIR $STORAGE_ARG
 
 echo ""
 echo "=== Pipeline terminée ==="

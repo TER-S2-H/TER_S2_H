@@ -1,11 +1,13 @@
 import os
+import glob
 import pickle
 from typing import List, Tuple
+from collections import OrderedDict
 
 import torch
 from torch.utils.data import Dataset
 
-from jepacman.config import Config
+from ..config import Config
 
 
 def obs_to_tensors(obs: dict) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -110,29 +112,31 @@ class PacmanJEPADataset(Dataset):
         # Chaque item = (agent_obs_list, target_frame_idx)
         # agent_obs_list : liste de toutes les frames de cet agent dans l'épisode
         # target_frame_idx : index de la frame à prédire (t+1)
-        self.items : List[Tuple[List[dict], int]] = []
+        self.items : List[Tuple[str, int, int]] = []  # (filepath, agent_id, t)
+        self._cache : OrderedDict = OrderedDict()
 
-        for fname in sorted(os.listdir(data_dir)):
-            if not fname.endswith(".pkl"):
-                continue
-
-            with open(os.path.join(data_dir, fname), "rb") as f:
+        for filepath in sorted(glob.glob(os.path.join(data_dir, "**", "*.pkl"), recursive=True)):
+            with open(filepath, "rb") as f:
                 session = pickle.load(f)
 
-            n_frames  = len(session)
-            n_agents  = len(session[0])
+            n_frames = len(session)
+            n_agents = len(session[0])
+            max_t    = n_frames - 1 - self.j
 
-            # Extraire les observations par agent
             for agent_id in range(n_agents):
-                agent_obs = [session[t][agent_id] for t in range(n_frames)]
+                stride = getattr(config, "stride", 20)
+                for t in range(0, max_t + 1, stride):
+                    self.items.append((filepath, agent_id, t))
 
-                # Pour chaque frame t, le contexte va de max(0, t-seq_len) à t
-                # et l'état à prédire est t+1 (donc t doit aller jusqu'à n_frames - 1 - j)
-                min_t = 0 # dès la première frame
-                max_t = n_frames - 1 - self.j  # assez de futur pour t+j
+            del session  # libère la mémoire immédiatement
 
-                for t in range(min_t, max_t + 1):
-                    self.items.append((agent_obs, t))
+    def _load_session(self, filepath: str) -> list:
+        if filepath not in self._cache:
+            if len(self._cache) >= 64:
+                self._cache.popitem(last=False)  # supprime le plus ancien
+            with open(filepath, "rb") as f:
+                self._cache[filepath] = pickle.load(f)
+        return self._cache[filepath]
 
     def __len__(self):
         return len(self.items)
@@ -182,7 +186,10 @@ class PacmanJEPADataset(Dataset):
         return cases_seq, pos_seq, masks_seq, actions_seq, n_real
 
     def __getitem__(self, idx):
-        agent_obs, t = self.items[idx]
+        filepath, agent_id, t = self.items[idx]
+        session   = self._load_session(filepath)
+        n_frames  = len(session)
+        agent_obs = [session[i][agent_id] for i in range(n_frames)]
 
         # ── Contexte ──────────────────────────────────────────────────────────
         cases_seq, pos_seq, masks_seq, actions_seq, n_real = (

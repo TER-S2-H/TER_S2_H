@@ -35,31 +35,24 @@ class StateEncoder(nn.Module):
             batch_first=True
         )
 
-        self.transformer = nn.TransformerEncoder(layer, num_layers=n_layers)
+        self.transformer = nn.TransformerEncoder(layer, num_layers=n_layers, enable_nested_tensor=False)
 
-    def forward(self, cases, positions):
-        # cases     : [B, N, case_dim]
-        #   B = batch size
-        #   N = nombre de cases = 81 (grille 9×9)
-        #   case_dim = 9
-
-        # positions : [B, N, 2]
-        #   (dx, dy) de chaque case relative à Pacman
-
+    def forward(self, cases, positions, pad_mask=None):
         B = cases.shape[0]
 
         x = self.patch_embed(cases) + self.pos_embed(positions)
 
-        # Ajouter le CLS token en début de séquence
         cls = self.cls_token.expand(B, 1, -1)
         x = torch.cat([cls, x], dim=1)
-        # [B, N+1, d_model]
-        
+
         if pad_mask is not None:
             cls_mask = torch.zeros(B, 1, dtype=torch.bool, device=pad_mask.device)
-            pad_mask = torch.cat([cls_mask, pad_mask], dim=1)  # [B, N+1]
+            pad_mask = torch.cat([cls_mask, pad_mask], dim=1)
 
-        x = self.transformer(x, src_key_padding_mask=pad_mask)
+        if pad_mask is not None and x.device.type == 'mps':
+            x = x.masked_fill(pad_mask.unsqueeze(-1), 0.0)
+            x = self.transformer(x)
+        else:
+            x = self.transformer(x, src_key_padding_mask=pad_mask)
 
-        # Retourner uniquement le CLS token
         return x[:, 0, :]

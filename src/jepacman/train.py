@@ -22,8 +22,8 @@ from .lightning.module import HierarchicalJEPAcmanModule
 # ── Constantes ────────────────────────────────────────────────────────────────
 
 N_TRIALS       = 100
-MAX_EPOCHS     = 100
-EARLY_STOPPING = 10
+MAX_EPOCHS     = 50
+EARLY_STOPPING = 7
 VAL_SPLIT      = 0.1
 OUTPUT_DIR     = "optuna_results"
 
@@ -34,14 +34,11 @@ def make_loaders(dataset: PacmanJEPADataset, batch_size: int):
     n_val   = int(len(dataset) * VAL_SPLIT)
     n_train = len(dataset) - n_val
     train_ds, val_ds = random_split(dataset, [n_train, n_val])
-    train_loader = DataLoader(
-        train_ds, batch_size=batch_size,
-        shuffle=True, num_workers=4, pin_memory=True
-    )
-    val_loader = DataLoader(
-        val_ds, batch_size=batch_size,
-        shuffle=False, num_workers=4, pin_memory=True
-    )
+    pin = torch.cuda.is_available()
+    train_loader = DataLoader(train_ds, batch_size=batch_size,
+                            shuffle=True, num_workers=4, pin_memory=pin)
+    val_loader   = DataLoader(val_ds, batch_size=batch_size,
+                            shuffle=False, num_workers=4, pin_memory=pin)
     return train_loader, val_loader
 
 
@@ -70,6 +67,7 @@ def make_trainer(max_epochs: int, patience: int, dirpath: str = None,
         max_epochs=max_epochs,
         accelerator="auto",
         devices="auto",
+        precision = "bf16-mixed" if torch.cuda.is_bf16_supported() else "16-mixed",
         log_every_n_steps=10,
         enable_progress_bar=enable_progress_bar,
         callbacks=callbacks,
@@ -114,28 +112,26 @@ def objective_phase1(trial: optuna.Trial, data_dir: str) -> float:
     config = Config(
         # Dimensions
         d_model  = trial.suggest_categorical("d_model", [64, 128, 256]),
-        seq_len  = trial.suggest_categorical("seq_len", [64, 128, 256]),
-
-        # Horizons — fixés ici car ils affectent aussi phase 2
+        seq_len = trial.suggest_categorical("seq_len", [32, 64, 128]),
         k = trial.suggest_categorical("k", [4, 8, 16]),
         j = trial.suggest_categorical("j", [16, 32, 64]),
 
         # State encoder
-        n_heads_state  = trial.suggest_categorical("n_heads_state", [2, 4]),
+        n_heads_state = trial.suggest_categorical("n_heads_state", [2, 4]),
         n_layers_state = trial.suggest_int("n_layers_state", 1, 4),
 
         # Sequence encoder
-        n_heads_seq    = trial.suggest_categorical("n_heads_seq", [2, 4, 8]),
-        n_layers_seq   = trial.suggest_int("n_layers_seq", 2, 6),
+        n_heads_seq = trial.suggest_categorical("n_heads_seq", [2, 4, 8]),
+        n_layers_seq = trial.suggest_int("n_layers_seq", 2, 6),
 
         # Predictor niveau 1
-        n_heads_pred_1  = trial.suggest_categorical("n_heads_pred_1", [2, 4]),
+        n_heads_pred_1 = trial.suggest_categorical("n_heads_pred_1", [2, 4]),
         n_layers_pred_1 = trial.suggest_int("n_layers_pred_1", 1, 4),
 
         # Entraînement
         ema_momentum = trial.suggest_float("ema_momentum", 0.99, 0.999),
-        lr           = trial.suggest_float("lr", 1e-4, 1e-3, log=True),
-        batch_size   = trial.suggest_categorical("batch_size", [32, 64, 128]),
+        lr = trial.suggest_float("lr", 1e-4, 1e-3, log=True),
+        batch_size = trial.suggest_categorical("batch_size", [32, 64, 128]),
 
         phase = 1,
     )
@@ -148,11 +144,16 @@ def objective_phase1(trial: optuna.Trial, data_dir: str) -> float:
             raise optuna.TrialPruned()
 
     dataset = PacmanJEPADataset(data_dir, config)
+
+    if len(dataset) == 0:
+        raise optuna.TrialPruned()
+
     train_loader, val_loader = make_loaders(dataset, config.batch_size)
 
     module  = HierarchicalJEPAcmanModule(config)
     trainer = make_trainer(
-        max_epochs=MAX_EPOCHS, patience=EARLY_STOPPING, trial=trial
+        max_epochs=MAX_EPOCHS, patience=EARLY_STOPPING, trial=trial,
+        enable_progress_bar=True
     )
     trainer.fit(module, train_loader, val_loader)
 
@@ -172,11 +173,7 @@ def run_phase1(data_dir: str, storage: str = None) -> tuple:
             multivariate     = True,
             seed             = 42,
         ),
-        pruner         = HyperbandPruner(
-            min_resource     = 5,
-            max_resource     = MAX_EPOCHS,
-            reduction_factor = 3,
-        ),
+        pruner = optuna.pruners.NopPruner(),
         storage        = storage,
         load_if_exists = True,
     )
@@ -187,7 +184,11 @@ def run_phase1(data_dir: str, storage: str = None) -> tuple:
         show_progress_bar = True,
     )
 
-    print(f"\n[Phase 1] Meilleur trial : {study.best_trial.number}")
+    try:
+        print(f"\n[Phase 1] Meilleur trial : {study.best_trial.number}")
+    except ValueError:
+        print("[Phase 1] Tous les trials ont été pruned — dataset trop petit pour les hyperparamètres testés")
+        raise RuntimeError("Aucun trial complété — augmente --n-sessions ou réduis j/seq_len")
     print(f"[Phase 1] Meilleure val_loss : {study.best_value:.4f}")
 
     save_results(study, study.best_params, "phase1")
@@ -265,7 +266,8 @@ def objective_phase2(trial: optuna.Trial, data_dir: str,
     transfer_encoder(phase1_module, module)   # encoder gelé dans on_fit_start
 
     trainer = make_trainer(
-        max_epochs=MAX_EPOCHS, patience=EARLY_STOPPING, trial=trial
+        max_epochs=MAX_EPOCHS, patience=EARLY_STOPPING, trial=trial,
+        enable_progress_bar=True
     )
     trainer.fit(module, train_loader, val_loader)
 
@@ -287,11 +289,7 @@ def run_phase2(data_dir: str, phase1_config: Config,
             multivariate     = True,
             seed             = 42,
         ),
-        pruner         = HyperbandPruner(
-            min_resource     = 5,
-            max_resource     = MAX_EPOCHS,
-            reduction_factor = 3,
-        ),
+        pruner = optuna.pruners.NopPruner(),
         storage        = storage,
         load_if_exists = True,
     )

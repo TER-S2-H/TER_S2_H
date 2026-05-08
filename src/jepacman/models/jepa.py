@@ -138,10 +138,7 @@ class HierarchicalJEPAcman(nn.Module):
             self.state_encoder.parameters(),
             self.target_encoder.parameters()
         ):
-            p_target.data = (
-                self.ema_momentum * p_target.data
-                + (1 - self.ema_momentum) * p_online.data
-            )
+            p_target.lerp_(p_online, 1 - self.ema_momentum)
 
     # ── Inférence hiérarchique ────────────────────────────────────────────────
 
