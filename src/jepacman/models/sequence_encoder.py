@@ -11,6 +11,11 @@ class SequenceEncoder(nn.Module):
     ):
         super().__init__()
 
+        self.seq_len = seq_len
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.n_layers = n_layers
+
         layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=n_heads,

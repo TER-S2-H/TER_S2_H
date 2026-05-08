@@ -11,6 +11,11 @@ class Predictor(nn.Module):
     ):
         super().__init__()
 
+        self.n_actions = n_actions
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.n_layers = n_layers
+
         # Embedding de l'action candidate
         self.action_embed = nn.Embedding(n_actions, d_model)
 

@@ -104,12 +104,10 @@ class HierarchicalJEPAcman(nn.Module):
 
     def forward_level1(self, cases, positions, pad_masks, actions,
                    cases_next, pos_next, pad_next, action_next):
-        seq = self.encode_sequence(cases, positions, actions, pad_masks)
+        seq    = self.encode_sequence(cases, positions, actions, pad_masks)
         e_pred = self.predictor_1(seq, action_next)
-
         with torch.no_grad():
             e_target = self.target_encoder(cases_next, pos_next, pad_mask=pad_next)
-
         return F.mse_loss(e_pred, e_target)
 
     def forward_level2(self, cases, positions, pad_masks, actions,
@@ -117,12 +115,9 @@ class HierarchicalJEPAcman(nn.Module):
         with torch.no_grad():
             seq = self.encode_sequence(cases, positions, actions, pad_masks)
             g_k = self.compute_gk(actions_future_k)
-
         e_pred = self.predictor_2.forward_with_latent(seq, g_k)
-
         with torch.no_grad():
             e_target = self.target_encoder(cases_tk, pos_tk, pad_mask=pad_tk)
-
         return F.mse_loss(e_pred, e_target)
 
     def forward_level3(self, cases, positions, pad_masks, actions,
@@ -130,12 +125,9 @@ class HierarchicalJEPAcman(nn.Module):
         with torch.no_grad():
             seq = self.encode_sequence(cases, positions, actions, pad_masks)
             g_j = self.compute_gk(actions_future_j)
-
         e_pred = self.predictor_3.forward_with_latent(seq, g_j)
-
         with torch.no_grad():
             e_target = self.target_encoder(cases_tj, pos_tj, pad_mask=pad_tj)
-
         return F.mse_loss(e_pred, e_target)
 
     # ── EMA ──────────────────────────────────────────────────────────────────

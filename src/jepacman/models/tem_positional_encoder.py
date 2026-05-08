@@ -9,6 +9,9 @@ class TEMPositionalEncoder(nn.Module):
     ):
         super().__init__()
 
+        self.n_actions = n_actions
+        self.d_model = d_model
+
         # Token spécial pour t=0
         self.g0 = nn.Parameter(torch.randn(1, d_model))
 
@@ -27,6 +30,7 @@ class TEMPositionalEncoder(nn.Module):
         #   actions[:, 1] = action qui a produit état t=1
         #   actions[:, 2] = action qui a produit état t=2
         #   ...
+        actions = actions.clamp(0, len(self.transitions) - 1)
         B, T = actions.shape
 
         codes = []

@@ -11,6 +11,11 @@ class StateEncoder(nn.Module):
     ):
         super().__init__()
 
+        self.case_dim = case_dim
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.n_layers = n_layers
+
         # Projette chaque case dans l'espace du transformer
         self.patch_embed = nn.Linear(case_dim, d_model)
 

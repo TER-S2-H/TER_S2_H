@@ -3,6 +3,7 @@ import json
 import torch
 import pytorch_lightning as pl
 import optuna
+import dataclasses
 from optuna.samplers import TPESampler
 from optuna.pruners import HyperbandPruner
 from optuna.visualization import (
@@ -311,16 +312,17 @@ def run_phase2(data_dir: str, phase1_config: Config,
     # Réentraînement final phase 2
     print("\n[Phase 2] Réentraînement final...")
 
-    best_config = Config(
-        **{k: v for k, v in phase1_config.__dict__.items()},
-        n_heads_pred_2  = study.best_params["n_heads_pred_2"],
-        n_layers_pred_2 = study.best_params["n_layers_pred_2"],
-        n_heads_pred_3  = study.best_params["n_heads_pred_3"],
-        n_layers_pred_3 = study.best_params["n_layers_pred_3"],
-        lr              = study.best_params["lr"],
-        batch_size      = study.best_params["batch_size"],
-        phase           = 2,
-    )
+    params = dataclasses.asdict(phase1_config)
+    params.update({
+        "n_heads_pred_2"  : study.best_params["n_heads_pred_2"],
+        "n_layers_pred_2" : study.best_params["n_layers_pred_2"],
+        "n_heads_pred_3"  : study.best_params["n_heads_pred_3"],
+        "n_layers_pred_3" : study.best_params["n_layers_pred_3"],
+        "lr"              : study.best_params["lr"],
+        "batch_size"      : study.best_params["batch_size"],
+        "phase"           : 2,
+    })
+    best_config = Config(**params)
 
     dataset = PacmanJEPADataset(data_dir, best_config)
     train_loader, val_loader = make_loaders(dataset, best_config.batch_size)

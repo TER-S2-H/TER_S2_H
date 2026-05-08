@@ -1,3 +1,4 @@
+import dataclasses
 import torch
 import pytorch_lightning as pl
 
@@ -13,7 +14,7 @@ class HierarchicalJEPAcmanModule(pl.LightningModule):
         self.lr     = config.lr
 
         # save_hyperparameters sur le dataclass converti en dict
-        self.save_hyperparameters(config.__dict__)
+        self.save_hyperparameters(dataclasses.asdict(config))
 
         self.model = HierarchicalJEPAcman(
             case_dim       = config.case_dim,
@@ -95,8 +96,7 @@ class HierarchicalJEPAcmanModule(pl.LightningModule):
 
         return self.model.forward_level1(
             cases_seq, pos_seq, pad_masks_seq, actions_seq,
-            cases_next, pos_next, pad_next,
-            action_next,
+            cases_next, pos_next, pad_next, action_next,
         )
 
     def _step_phase2(self, batch):
@@ -113,13 +113,11 @@ class HierarchicalJEPAcmanModule(pl.LightningModule):
 
         loss_2 = self.model.forward_level2(
             cases_seq, pos_seq, pad_masks_seq, actions_seq,
-            cases_tk, pos_tk, pad_tk,
-            actions_future_k,
+            cases_tk, pos_tk, pad_tk, actions_future_k,
         )
         loss_3 = self.model.forward_level3(
             cases_seq, pos_seq, pad_masks_seq, actions_seq,
-            cases_tj, pos_tj, pad_tj,
-            actions_future_j,
+            cases_tj, pos_tj, pad_tj, actions_future_j,
         )
 
         loss = loss_2 + loss_3
