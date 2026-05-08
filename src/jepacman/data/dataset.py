@@ -10,65 +10,6 @@ from torch.utils.data import Dataset
 
 from ..config import Config
 
-
-def obs_to_tensors(obs: dict) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Convertit une observation agent en tenseurs.
-    cases     : [N, 8]
-    positions : [N, 2]
-    pad_mask  : [N]
-    """
-    cells = obs["visible_cells"]
-    cases = torch.tensor([[
-            c["wall_north"], c["wall_south"],
-            c["wall_east"],  c["wall_west"],
-            c["has_pellet"], c["has_super_pellet"],
-            c["has_ghost"],  c["has_pacman"],
-        ]
-        for c in cells
-    ], dtype=torch.float32)                              # [N, 8]
-
-    positions = torch.tensor(
-        [[c["dx"], c["dy"]] for c in cells],
-        dtype=torch.float32
-    )                                                    # [N, 2]
-
-    pad_mask = torch.tensor(
-        [c["is_pad"] for c in cells],
-        dtype=torch.bool
-    )                                                    # [N]
-
-    return cases, positions, pad_mask
-
-
-def sanitize_action(action: int, is_first: bool = False) -> int:
-    """
-    is_first → 5 (token spécial, pas d'action qui a produit cet état)
-    -1       → 4 (stayed)
-    0..3     → inchangé
-    """
-    if is_first:
-        return 5
-    return 4 if action == -1 else action
-
-
-def make_padding(n_pad: int, n_cells: int, case_dim: int) -> Tuple[
-    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
-]:
-    """
-    Génère n_pad frames de padding (zéros) à ajouter à gauche de la séquence.
-    cases     : [n_pad, N, case_dim]   — zéros
-    positions : [n_pad, N, 2]          — zéros
-    pad_masks : [n_pad, N]             — True (tout masqué)
-    actions   : [n_pad]                — token spécial 5
-    """
-    cases     = torch.zeros(n_pad, n_cells, case_dim)
-    positions = torch.zeros(n_pad, n_cells, 2)
-    pad_masks = torch.ones(n_pad, n_cells, dtype=torch.bool)
-    actions   = torch.full((n_pad,), 5, dtype=torch.long)
-    return cases, positions, pad_masks, actions
-
-
 class PacmanJEPADataset(Dataset):
     """
     Dataset de séquences anonymes par agent.
