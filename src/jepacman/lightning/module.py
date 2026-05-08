@@ -2,8 +2,8 @@ import dataclasses
 import torch
 import pytorch_lightning as pl
 
-from config import Config
-from models.jepa import HierarchicalJEPAcman
+from jepacman.config import Config
+from jepacman.models.jepa import HierarchicalJEPAcman
 
 
 class HierarchicalJEPAcmanModule(pl.LightningModule):

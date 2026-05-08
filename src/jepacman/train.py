@@ -14,9 +14,9 @@ from optuna.visualization import (
 )
 from torch.utils.data import DataLoader, random_split
 
-from config import Config
-from data.dataset import PacmanJEPADataset
-from lightning.module import HierarchicalJEPAcmanModule
+from .config import Config
+from .data.dataset import PacmanJEPADataset
+from .lightning.module import HierarchicalJEPAcmanModule
 
 
 # ── Constantes ────────────────────────────────────────────────────────────────
@@ -195,10 +195,10 @@ def run_phase1(data_dir: str, storage: str = None) -> tuple:
     # Réentraînement final phase 1 avec early stopping sans borne artificielle
     print("\n[Phase 1] Réentraînement final...")
 
-    best_config = Config(**{
-        k: v for k, v in study.best_params.items()
-        if k in Config.__dataclass_fields__
-    }, phase=1)
+    default = dataclasses.asdict(Config())
+    default.update(study.best_params)
+    default["phase"] = 1
+    best_config = Config(**default)
 
     dataset = PacmanJEPADataset(data_dir, best_config)
     train_loader, val_loader = make_loaders(dataset, best_config.batch_size)

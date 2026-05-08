@@ -3,10 +3,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.state_encoder import StateEncoder
-from models.tem_positional_encoder import TEMPositionalEncoder
-from models.sequence_encoder import SequenceEncoder
-from models.predictor import Predictor
+from .state_encoder import StateEncoder
+from .tem_positional_encoder import TEMPositionalEncoder
+from .sequence_encoder import SequenceEncoder
+from .predictor import Predictor
 
 
 class HierarchicalJEPAcman(nn.Module):

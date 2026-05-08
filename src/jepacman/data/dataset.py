@@ -5,7 +5,7 @@ from typing import List, Tuple
 import torch
 from torch.utils.data import Dataset
 
-from config import Config
+from jepacman.config import Config
 
 
 def obs_to_tensors(obs: dict) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
