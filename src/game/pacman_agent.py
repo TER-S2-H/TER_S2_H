@@ -2,6 +2,36 @@ import pygame
 from .agent import Agent, Direction
 
 
+class ReplayPacManAgent(Agent):
+    """
+    Agent Pac-Man qui rejoue une partie enregistrée par Recorder.
+
+    Les actions sont des strings ("UP", "DOWN", "LEFT", "RIGHT", "NONE")
+    extraites de recorder.frames[i]["actions"]["pacman"].
+    Quand la liste est épuisée, retourne Direction.NONE indéfiniment.
+    """
+
+    def __init__(self, actions: list):
+        self._actions = actions   # list[str]
+        self._index   = 0
+
+    def handle_event(self, event) -> None:
+        pass   # replay : pas d'entrée clavier
+
+    def get_action(self, game_state: dict) -> Direction:
+        if self._index >= len(self._actions):
+            return Direction.NONE
+        name = self._actions[self._index]
+        self._index += 1
+        try:
+            return Direction[name]
+        except KeyError:
+            return Direction.NONE
+
+    def confirm_direction(self, direction: Direction) -> None:
+        pass   # replay : pas de buffer directionnel à corriger
+
+
 class PacManAgent(Agent):
     """
     Agent Pac-Man contrôlé au clavier.
