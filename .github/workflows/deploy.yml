@@ -36,11 +36,11 @@ jobs:
 
       # 4. Lancer les tests fonctionnels (pas besoin de connexion internet)
       - name: Tests fonctionnels — API locale
-        run: pytest tests/test_api_local.py -v
+        run: python -m pytest tests/test_api_local.py -v
 
       # 5. Lancer les tests des propriétés du maze
       - name: Tests des propriétés du maze
-        run: pytest tests/test_maze_properties.py -v
+        run: python -m pytest tests/test_maze_properties.py -v
 
       # Note : on ne lance PAS test_api_cloud.py ici car ces tests
       # appellent Render qui n'est pas encore redéployé à ce stade.
