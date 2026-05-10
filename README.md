@@ -8,13 +8,13 @@ Générateur de maze Pac-Man exposé en tant que web service HTTP, déployé sur
 
 ## Installation
 
-Python 3.6+ requis.
+Python 3.8+ requis.
 
 ```bash
 # Dépendances serveur (API Flask + générateur)
 pip install -r requirements.txt
 
-# Dépendances client local (visualisation Pygame)
+# Dépendances client local (visualisation Pygame + jeu)
 pip install -r requirements-client.txt
 ```
 
@@ -27,7 +27,8 @@ pip install -r requirements-client.txt
 
 ```
 ├── app.py                        # API Flask (serveur web)
-├── client.py                     # Visualisation Pygame (client local)
+├── main.py                       # Point d'entrée du jeu Pac-Man
+├── client.py                     # Visualisation Pygame du maze (client local)
 ├── generate.py                   # Générateur en ligne de commande (wrapper)
 ├── maze_complexity.py            # Score de complexité (wrapper)
 ├── maze_complexity_visualize.py  # Visualisation du chemin (wrapper)
@@ -44,13 +45,23 @@ pip install -r requirements-client.txt
 │   ├── maze_complexity.py        # Calcul du score de complexité
 │   ├── maze_complexity_visualize.py
 │   ├── generate.py
-│   └── render_json.py
+│   ├── render_json.py
+│   ├── database/
+│   │   └── db.py                 # Connexion MongoDB (notation des mazes)
+│   └── game/
+│       ├── agent.py              # Classe de base Agent / enum Direction
+│       ├── environment.py        # Environnement du jeu (grille, collisions)
+│       ├── game.py               # Boucle principale (rendu + logique)
+│       ├── ghost.py              # Fantômes + factory d'IA (_GHOST_REGISTRY)
+│       ├── pacman_agent.py       # Agents Pac-Man (clavier et replay)
+│       ├── pellet.py             # Gestion des pellets
+│       └── recorder.py           # Enregistrement de partie (JSON)
 └── tests/
     ├── test_api_local.py         # Tests fonctionnels (Flask test client)
     ├── test_maze_properties.py   # Tests caractéristiques du maze
     ├── test_api_cloud.py         # Tests end-to-end (Render)
     ├── curl_examples.sh          # Exemples de commandes curl
-    └── conftest.py               # Configuration pytest
+    └── conftest.py               # Configuration pytest (mock MongoDB)
 ```
 
 ---
@@ -116,7 +127,12 @@ python client.py --seed 42
 python client.py --tile-size 16
 ```
 
-**Contrôles :** `ESPACE` → nouveau maze | `Q` → quitter
+**Contrôles :**
+- `ESPACE` → nouveau maze
+- `0`–`5` → noter le maze (enregistré en base de données)
+- `Q / Échap` → quitter
+
+Le client affiche les pellets (petits) et les power pellets (grands, aux 4 coins).
 
 ---
 
@@ -135,11 +151,31 @@ python main.py --local
 # Seed fixe en local
 python main.py --local --seed 42
 
-# Enregistrer la partie
+# Enregistrer la partie dans recording.json
 python main.py --record
+
+# Jouer sans fantômes
+python main.py --no-ghosts
+
+# Rejouer une partie enregistrée
+python main.py --replay recording.json
+
+# Choisir l'IA des fantômes (défaut : random)
+python main.py --ai random
 ```
 
-**Contrôles :** `Flèches / WASD` → déplacer Pac-Man | `P` → pause | `Q / Échap` → quitter
+**Contrôles :**
+- `Flèches / WASD` → déplacer Pac-Man
+- `P` → pause
+- `R` → rejouer (sur l'écran Game Over)
+- `Q / Échap` → quitter
+
+**Enregistrement / replay :**  
+`--record` sauvegarde chaque action dans `recording.json`.  
+`--replay recording.json` rejoue la partie automatiquement avec le même seed.
+
+**Brancher une IA fantôme :**  
+Créer une sous-classe de `Ghost` dans `src/game/`, l'enregistrer dans `_GHOST_REGISTRY` (fichier `ghost.py`), puis passer son nom avec `--ai mon_ia`.
 
 > Sur le plan gratuit Render, le service se met en veille après 15 min
 > d'inactivité. Le premier appel peut prendre 50 secondes.
