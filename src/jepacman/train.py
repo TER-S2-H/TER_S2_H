@@ -1,4 +1,5 @@
 import os
+import gc
 import json
 import torch
 import pytorch_lightning as pl
@@ -21,8 +22,9 @@ from .lightning.module import HierarchicalJEPAcmanModule
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 
-N_TRIALS       = 100
-MAX_EPOCHS     = 50
+N_TRIALS       = 5
+MAX_EPOCHS_TRIALS = 15
+MAX_EPOCHS      = 30
 EARLY_STOPPING = 7
 VAL_SPLIT      = 0.1
 OUTPUT_DIR     = "optuna_results"
@@ -34,11 +36,16 @@ def make_loaders(dataset: PacmanJEPADataset, batch_size: int):
     n_val   = int(len(dataset) * VAL_SPLIT)
     n_train = len(dataset) - n_val
     train_ds, val_ds = random_split(dataset, [n_train, n_val])
-    pin = torch.cuda.is_available()
-    train_loader = DataLoader(train_ds, batch_size=batch_size,
-                            shuffle=True, num_workers=4, pin_memory=pin)
-    val_loader   = DataLoader(val_ds, batch_size=batch_size,
-                            shuffle=False, num_workers=4, pin_memory=pin)
+
+    cuda      = torch.cuda.is_available()
+    n_workers = 4
+    pin       = cuda
+
+    kwargs = dict(batch_size=batch_size, num_workers=n_workers,
+                  pin_memory=pin, persistent_workers=(n_workers > 0))
+
+    train_loader = DataLoader(train_ds, shuffle=True,  **kwargs)
+    val_loader   = DataLoader(val_ds,   shuffle=False, **kwargs)
     return train_loader, val_loader
 
 
@@ -112,7 +119,7 @@ def objective_phase1(trial: optuna.Trial, data_dir: str) -> float:
     config = Config(
         # Dimensions
         d_model  = trial.suggest_categorical("d_model", [64, 128, 256]),
-        seq_len = trial.suggest_categorical("seq_len", [32, 64, 128]),
+        seq_len = trial.suggest_categorical("seq_len", [32, 64]),
         k = trial.suggest_categorical("k", [4, 8, 16]),
         j = trial.suggest_categorical("j", [16, 32, 64]),
 
@@ -131,7 +138,7 @@ def objective_phase1(trial: optuna.Trial, data_dir: str) -> float:
         # Entraînement
         ema_momentum = trial.suggest_float("ema_momentum", 0.99, 0.999),
         lr = trial.suggest_float("lr", 1e-4, 1e-3, log=True),
-        batch_size = trial.suggest_categorical("batch_size", [32, 64, 128]),
+        batch_size = trial.suggest_categorical("batch_size", [32, 64]),
 
         phase = 1,
     )
@@ -152,12 +159,27 @@ def objective_phase1(trial: optuna.Trial, data_dir: str) -> float:
 
     module  = HierarchicalJEPAcmanModule(config)
     trainer = make_trainer(
-        max_epochs=MAX_EPOCHS, patience=EARLY_STOPPING, trial=trial,
+        max_epochs=MAX_EPOCHS_TRIALS, patience=EARLY_STOPPING, trial=trial,
         enable_progress_bar=True
     )
-    trainer.fit(module, train_loader, val_loader)
+    try:
+        trainer.fit(module, train_loader, val_loader)
+    except RuntimeError as e:
+        if "out of memory" in str(e).lower():
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+            raise optuna.TrialPruned()
+        raise
 
-    return trainer.callback_metrics.get("val_loss", float("inf")).item()
+    val_loss = trainer.callback_metrics.get("val_loss", float("inf")).item()
+
+    # Libérer explicitement avant le prochain trial
+    del trainer, module, train_loader, val_loader, dataset
+    gc.collect()
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+
+    return val_loss
 
 
 def run_phase1(data_dir: str, storage: str = None) -> tuple:
@@ -180,7 +202,7 @@ def run_phase1(data_dir: str, storage: str = None) -> tuple:
 
     study.optimize(
         lambda trial: objective_phase1(trial, data_dir),
-        n_trials          = N_TRIALS,
+        n_trials          = 0,
         show_progress_bar = True,
     )
 
@@ -249,7 +271,7 @@ def objective_phase2(trial: optuna.Trial, data_dir: str,
 
         # Lr et batch_size peuvent être différents en phase 2
         lr         = trial.suggest_float("lr", 1e-4, 1e-3, log=True),
-        batch_size = trial.suggest_categorical("batch_size", [32, 64, 128]),
+        batch_size = trial.suggest_categorical("batch_size", [32, 64]),
 
         phase = 2,
     )
@@ -266,12 +288,28 @@ def objective_phase2(trial: optuna.Trial, data_dir: str,
     transfer_encoder(phase1_module, module)   # encoder gelé dans on_fit_start
 
     trainer = make_trainer(
-        max_epochs=MAX_EPOCHS, patience=EARLY_STOPPING, trial=trial,
+        max_epochs=MAX_EPOCHS_TRIALS, patience=EARLY_STOPPING, trial=trial,
         enable_progress_bar=True
     )
-    trainer.fit(module, train_loader, val_loader)
 
-    return trainer.callback_metrics.get("val_loss", float("inf")).item()
+    try:
+        trainer.fit(module, train_loader, val_loader)
+    except RuntimeError as e:
+        if "out of memory" in str(e).lower():
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+            raise optuna.TrialPruned()
+        raise
+
+    val_loss = trainer.callback_metrics.get("val_loss", float("inf")).item()
+
+    # Libérer explicitement avant le prochain trial
+    del trainer, module, train_loader, val_loader, dataset
+    gc.collect()
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+
+    return val_loss
 
 
 def run_phase2(data_dir: str, phase1_config: Config,
@@ -358,15 +396,30 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("data_dir")
-    parser.add_argument("--n_trials", type=int, default=N_TRIALS)
-    parser.add_argument("--storage",  type=str, default=None,
+    parser.add_argument("--n_trials",    type=int,  default=N_TRIALS)
+    parser.add_argument("--storage",     type=str,  default=None,
                         help="ex: sqlite:///optuna.db")
+    parser.add_argument("--phase2-only", action="store_true",
+                        help="Sauter la phase 1 et charger depuis optuna_results/")
     args = parser.parse_args()
 
     N_TRIALS = args.n_trials
 
-    # ── Étape 1 — optimiser et entraîner phase 1 ─────────────────────────────
-    phase1_config, phase1_module = run_phase1(args.data_dir, args.storage)
+    if args.phase2_only:
+        with open(os.path.join(OUTPUT_DIR, "best_params_phase1.json")) as f:
+            params = json.load(f)
+        default = dataclasses.asdict(Config())
+        default.update(params)
+        default["phase"] = 1
+        phase1_config = Config(**default)
 
-    # ── Étape 2 — optimiser et entraîner phase 2 ─────────────────────────────
+        phase1_module = HierarchicalJEPAcmanModule(phase1_config)
+        weights_path  = os.path.join(OUTPUT_DIR, "phase1", "encoder.pt")
+        phase1_module.model.load_state_dict(
+            torch.load(weights_path, map_location="cpu")
+        )
+        print(f"[Phase 1] Poids chargés depuis {weights_path}")
+    else:
+        phase1_config, phase1_module = run_phase1(args.data_dir, args.storage)
+
     run_phase2(args.data_dir, phase1_config, phase1_module, args.storage)

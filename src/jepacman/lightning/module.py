@@ -69,6 +69,10 @@ class HierarchicalJEPAcmanModule(pl.LightningModule):
         if self.device.type == 'mps':
             torch.mps.empty_cache()
 
+    def on_train_batch_end(self, outputs, batch, batch_idx):
+        if self.device.type == 'mps' and batch_idx % 100 == 0:
+            torch.mps.empty_cache()
+
     def training_step(self, batch, batch_idx):
         loss = self._step_phase1(batch) if self.phase == 1 else self._step_phase2(batch)
         self.log("train_loss", loss, prog_bar=True, on_step=False, on_epoch=True)

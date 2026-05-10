@@ -42,7 +42,7 @@ class Config:
     lr            : float = 3e-4
     batch_size    : int   = 64
     phase         : int   = 1     # 1 = encoder + predictor_1 / 2 = predictor_2 + predictor_3
-    stride : int = 20   # ne prendre qu'une frame sur 20
+    stride : int = 100   # ne prendre qu'une frame sur 100
 
     # ── Inférence ─────────────────────────────────────────────────────────────
     latent_optim_steps : int   = 100    # steps de descente de gradient sur g_j / g_k

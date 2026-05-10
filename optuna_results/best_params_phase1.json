@@ -1,0 +1,15 @@
+{
+  "d_model": 64,
+  "seq_len": 32,
+  "k": 4,
+  "j": 64,
+  "n_heads_state": 4,
+  "n_layers_state": 2,
+  "n_heads_seq": 4,
+  "n_layers_seq": 6,
+  "n_heads_pred_1": 4,
+  "n_layers_pred_1": 4,
+  "ema_momentum": 0.9917884411338076,
+  "lr": 0.00010127963257331491,
+  "batch_size": 32
+}
