@@ -76,3 +76,32 @@ class Ghost(Agent):
 
     def __repr__(self):
         return f"Ghost({self.name}, x={self.x}, y={self.y}, frightened={self.frightened})"
+
+
+# ---------------------------------------------------------------------------
+# Factory — permet aux binômes d'enregistrer leur IA sans toucher à game.py
+# ---------------------------------------------------------------------------
+
+# Registre des IAs disponibles : nom → classe Ghost (ou sous-classe)
+_GHOST_REGISTRY: dict = {
+    "random": Ghost,
+    # Exemple pour brancher une IA :
+    #   from .my_ai_ghost import BlinkyAI
+    #   _GHOST_REGISTRY["blinky_ai"] = BlinkyAI
+}
+
+
+def get_ghost_agent(name: str, ghost_id: int,
+                    start_x: int, start_y: int) -> Ghost:
+    """
+    Instancie un fantôme selon le nom de l'IA demandée.
+
+    Usage dans main.py : --ai random  (seule valeur actuellement)
+
+    Pour brancher une IA :
+      1. Créer MyAIGhost(Ghost) dans src/game/my_ai_ghost.py
+      2. Importer et ajouter dans _GHOST_REGISTRY ci-dessus
+      3. Lancer : python main.py --ai mon_ia
+    """
+    cls = _GHOST_REGISTRY.get(name, Ghost)
+    return cls(ghost_id, start_x, start_y)

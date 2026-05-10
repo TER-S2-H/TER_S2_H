@@ -7,7 +7,7 @@ from .environment import (
     CLOUD_API_URL, LOCAL_API_URL,
 )
 from .pacman_agent import PacManAgent
-from .ghost import Ghost, GHOST_COLORS
+from .ghost import Ghost, GHOST_COLORS, get_ghost_agent
 from .recorder import Recorder
 from .agent import Direction, DIRECTION_VECTORS
 
@@ -50,14 +50,18 @@ class Game:
     """
 
     def __init__(self, seed=None, local=False, record=False,
-                 pacman_agent=None):
-        self.base_url      = LOCAL_API_URL if local else CLOUD_API_URL
-        self.seed          = seed
-        self.record        = record
-        self._pacman_agent = pacman_agent
-        self._bonus_given  = False
-        self._frame        = 0
-        self._maze_surf    = None   # surface cachée du labyrinthe (murs)
+                 pacman_agent=None, no_ghosts=False, ai="random"):
+        self.base_url       = LOCAL_API_URL if local else CLOUD_API_URL
+        self.seed           = seed
+        self.record         = record
+        self._pacman_agent  = pacman_agent
+        self._no_ghosts     = no_ghosts
+        self._ai            = ai
+        self._bonus_given   = False
+        self._frame         = 0
+        self._maze_surf     = None   # surface cachée du labyrinthe (murs)
+        self._caught_coups  = None   # tick auquel Pac-Man a été attrapé
+        self._font_small    = None
 
     # ── Boucle principale ────────────────────────────────────────────────────
     def run(self):
@@ -74,7 +78,9 @@ class Game:
         print(f"seed={env.seed}  ({env.width}×{env.height})")
 
         pacman = self._pacman_agent or PacManAgent()
-        ghosts = [Ghost(i, gx, gy) for i, (gx, gy) in enumerate(GHOST_START_POSITIONS)]
+        ghosts = ([] if self._no_ghosts else
+                  [get_ghost_agent(self._ai, i, gx, gy)
+                   for i, (gx, gy) in enumerate(GHOST_START_POSITIONS)])
         env.ghosts = ghosts
         recorder = Recorder(seed=env.seed) if self.record else None
 
@@ -83,8 +89,9 @@ class Game:
         screen = pygame.display.set_mode((win_w, win_h))
         pygame.display.set_caption(f"Pac-Man  —  seed {env.seed}")
         clock = pygame.time.Clock()
-        font     = pygame.font.SysFont("monospace", 14, bold=True)
-        font_big = pygame.font.SysFont("monospace", 32, bold=True)
+        font             = pygame.font.SysFont("monospace", 14, bold=True)
+        font_big         = pygame.font.SysFont("monospace", 32, bold=True)
+        self._font_small = pygame.font.SysFont("monospace", 11)
 
         paused  = False
         running = True
@@ -105,11 +112,13 @@ class Game:
                     if event.key == pygame.K_r and env.game_over:
                         env = Environment(seed=self.seed, base_url=self.base_url)
                         env.load_maze()
-                        ghosts = [Ghost(i, gx, gy)
-                                  for i, (gx, gy) in enumerate(GHOST_START_POSITIONS)]
+                        ghosts = ([] if self._no_ghosts else
+                                  [get_ghost_agent(self._ai, i, gx, gy)
+                                   for i, (gx, gy) in enumerate(GHOST_START_POSITIONS)])
                         env.ghosts = ghosts
                         pacman = self._pacman_agent or PacManAgent()
-                        self._bonus_given = False
+                        self._bonus_given  = False
+                        self._caught_coups = None
                         self._frame = 0
                         self._maze_surf = None
                         if self.record:
@@ -120,12 +129,17 @@ class Game:
             # ── Game Over ──────────────────────────────────────────────────
             if env.game_over:
                 self._draw(screen, env, font)
-                msg  = font_big.render("GAME OVER", True, (255, 0, 0))
-                hint = font.render("R = rejouer  |  Q = quitter", True, C["text"])
-                screen.blit(msg,  (win_w//2 - msg.get_width()//2,
-                                   win_h//2 - msg.get_height()//2))
-                screen.blit(hint, (win_w//2 - hint.get_width()//2,
-                                   win_h//2 + msg.get_height()))
+                msg      = font_big.render("GAME OVER", True, (255, 0, 0))
+                coups_txt = (f"Attrapé en {self._caught_coups} coups"
+                             if self._caught_coups is not None else "")
+                caught_s = font.render(coups_txt, True, C["text_yellow"])
+                hint     = font.render("R = rejouer  |  Q = quitter", True, C["text"])
+                y_msg    = win_h//2 - msg.get_height()//2
+                y_caught = y_msg + msg.get_height() + 8
+                y_hint   = y_caught + caught_s.get_height() + 6
+                screen.blit(msg,      (win_w//2 - msg.get_width()//2,      y_msg))
+                screen.blit(caught_s, (win_w//2 - caught_s.get_width()//2, y_caught))
+                screen.blit(hint,     (win_w//2 - hint.get_width()//2,     y_hint))
                 pygame.display.flip()
                 continue
 
@@ -153,6 +167,8 @@ class Game:
                     actions[f"ghost_{i}"] = g.get_action(state)
 
                 env.update(actions)
+                if env.game_over and self._caught_coups is None:
+                    self._caught_coups = self._frame // FRAMES_PER_TICK
                 pacman.confirm_direction(env.pacman_dir)
 
                 if not self._bonus_given and env.score >= BONUS_LIFE_THRESHOLD:
@@ -364,3 +380,10 @@ class Game:
             ft = font.render(f"★{env.frightened_timer:>3}", True, C["fright_blink"])
             screen.blit(ft, (screen.get_width()//2 + 80,
                               HEADER_HEIGHT//2 - ft.get_height()//2))
+
+        # Compteur de coups (bas du header, centré)
+        if self._font_small is not None:
+            coups = self._frame // FRAMES_PER_TICK
+            coups_s = self._font_small.render(f"{coups} coups", True, (140, 140, 140))
+            screen.blit(coups_s, (screen.get_width()//2 - coups_s.get_width()//2,
+                                  HEADER_HEIGHT - coups_s.get_height() - 2))
