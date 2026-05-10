@@ -35,6 +35,7 @@ class Recorder:
         self.seed:   Optional[int] = seed
         self.frames: list = []
         self._step:  int  = 0
+        self.coups:  int  = 0   # mouvements effectifs de Pac-Man, renseigné par Game
 
     # ------------------------------------------------------------------
     # Enregistrement
@@ -70,11 +71,12 @@ class Recorder:
             "seed":        self.seed,
             "recorded_at": datetime.now().isoformat(),
             "total_steps": self._step,
+            "total_coups": self.coups,
             "frames":      self.frames,
         }
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        print(f"[Recorder] Partie sauvegardée : {filename} ({self._step} frames)")
+        print(f"[Recorder] Partie sauvegardée : {filename} ({self._step} ticks, {self.coups} coups)")
 
     @classmethod
     def load(cls, filename: str) -> "Recorder":
@@ -84,6 +86,7 @@ class Recorder:
         rec = cls(seed=data.get("seed"))
         rec.frames = data.get("frames", [])
         rec._step  = data.get("total_steps", len(rec.frames))
+        rec.coups  = data.get("total_coups", 0)
         return rec
 
     # ------------------------------------------------------------------

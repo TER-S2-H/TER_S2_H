@@ -60,7 +60,8 @@ class Game:
         self._bonus_given   = False
         self._frame         = 0
         self._maze_surf     = None   # surface cachée du labyrinthe (murs)
-        self._caught_coups  = None   # tick auquel Pac-Man a été attrapé
+        self._caught_coups  = None   # valeur figée de _coups au moment du game over
+        self._coups         = 0      # mouvements effectifs de Pac-Man (changement de cellule)
         self._font_small    = None
 
     # ── Boucle principale ────────────────────────────────────────────────────
@@ -119,6 +120,7 @@ class Game:
                         pacman = self._pacman_agent or PacManAgent()
                         self._bonus_given  = False
                         self._caught_coups = None
+                        self._coups        = 0
                         self._frame = 0
                         self._maze_surf = None
                         if self.record:
@@ -166,9 +168,12 @@ class Game:
                 for i, g in enumerate(ghosts):
                     actions[f"ghost_{i}"] = g.get_action(state)
 
+                px_before, py_before = env.pacman_x, env.pacman_y
                 env.update(actions)
+                if (env.pacman_x, env.pacman_y) != (px_before, py_before):
+                    self._coups += 1
                 if env.game_over and self._caught_coups is None:
-                    self._caught_coups = self._frame // FRAMES_PER_TICK
+                    self._caught_coups = self._coups
                 pacman.confirm_direction(env.pacman_dir)
 
                 if not self._bonus_given and env.score >= BONUS_LIFE_THRESHOLD:
@@ -184,6 +189,7 @@ class Game:
             pygame.display.flip()
 
         if recorder:
+            recorder.coups = self._caught_coups if self._caught_coups is not None else self._coups
             recorder.save("recording.json")
         pygame.quit()
         sys.exit(0)
@@ -381,9 +387,9 @@ class Game:
             screen.blit(ft, (screen.get_width()//2 + 80,
                               HEADER_HEIGHT//2 - ft.get_height()//2))
 
-        # Compteur de coups (bas du header, centré)
+        # Compteur de coups (bas du header, centré) — figé dès game over
         if self._font_small is not None:
-            coups = self._frame // FRAMES_PER_TICK
+            coups = self._caught_coups if self._caught_coups is not None else self._coups
             coups_s = self._font_small.render(f"{coups} coups", True, (140, 140, 140))
             screen.blit(coups_s, (screen.get_width()//2 - coups_s.get_width()//2,
                                   HEADER_HEIGHT - coups_s.get_height() - 2))
