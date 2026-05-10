@@ -1,0 +1,31 @@
+.game-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+
+  h2 {
+    color: #ffdc00;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin: 0;
+  }
+}
+
+.game-frame-container {
+  border: 2px solid #2d4bbb;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 0 24px rgba(45, 75, 185, 0.6);
+}
+
+.game-frame { display: block; }
+
+.hint {
+  color: #999;
+  font-size: 12px;
+  font-family: monospace;
+  margin: 0;
+}

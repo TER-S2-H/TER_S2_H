@@ -1,0 +1,97 @@
+.rating-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  h3 {
+    margin: 0;
+    color: #ffdc00;
+    font-family: monospace;
+    font-size: 14px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+}
+
+.hint {
+  color: #777;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.current-seed {
+  font-size: 13px;
+  color: #ccc;
+  margin: 0;
+
+  span {
+    color: #ffdc00;
+    font-family: monospace;
+    font-weight: bold;
+  }
+}
+
+.stars-row {
+  display: flex;
+  gap: 6px;
+}
+
+.star-btn {
+  background: none;
+  border: 1px solid #444;
+  color: #555;
+  font-size: 22px;
+  width: 38px;
+  height: 38px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+
+  &.active {
+    color: #f90;
+    border-color: #f90;
+  }
+
+  &:hover:not(:disabled) {
+    color: #fc6;
+    border-color: #fc6;
+  }
+
+  &:disabled { cursor: not-allowed; opacity: 0.6; }
+}
+
+.label-preview {
+  font-size: 12px;
+  color: #aaa;
+  margin: 0;
+}
+
+.btn-submit {
+  background: #2d4bbb;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  align-self: flex-start;
+
+  &:hover:not(:disabled) { background: #3a5edb; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.btn-reset {
+  background: none;
+  border: 1px solid #555;
+  color: #aaa;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  align-self: flex-start;
+
+  &:hover { border-color: #888; color: #fff; }
+}
+
+.msg-ok  { color: #5f5; font-size: 12px; margin: 0; }
+.msg-err { color: #f55; font-size: 12px; margin: 0; }

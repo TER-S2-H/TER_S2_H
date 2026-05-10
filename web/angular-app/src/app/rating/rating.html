@@ -1,0 +1,41 @@
+<div class="rating-panel">
+  <h3>Noter un maze</h3>
+
+  <div *ngIf="seed === null" class="hint">
+    Cliquez sur une ligne du tableau pour sélectionner un maze.
+  </div>
+
+  <ng-container *ngIf="seed !== null">
+    <p class="current-seed">Seed sélectionné : <span>{{ seed }}</span></p>
+
+    <div class="stars-row">
+      <button
+        *ngFor="let v of ratingValues"
+        class="star-btn"
+        [class.active]="selectedRating !== null && v <= selectedRating"
+        [disabled]="confirmed"
+        (click)="select(v)"
+        [title]="ratingLabels[v]">
+        {{ v === 0 ? '✕' : '★' }}
+      </button>
+    </div>
+
+    <p *ngIf="selectedRating !== null" class="label-preview">
+      {{ ratingLabels[selectedRating] }} ({{ selectedRating }}/5)
+    </p>
+
+    <button
+      class="btn-submit"
+      [disabled]="selectedRating === null || confirmed || sending"
+      (click)="submit()">
+      {{ sending ? 'Envoi…' : confirmed ? 'Envoyé ✓' : 'Envoyer la note' }}
+    </button>
+
+    <p *ngIf="message" class="msg-ok">{{ message }}</p>
+    <p *ngIf="error"   class="msg-err">{{ error }}</p>
+
+    <button *ngIf="confirmed" class="btn-reset" (click)="reset()">
+      Noter un autre maze
+    </button>
+  </ng-container>
+</div>

@@ -1,0 +1,42 @@
+<div class="maze-list">
+  <div class="list-header">
+    <h3>Mazes stockés</h3>
+    <button (click)="load()" [disabled]="loading" class="btn-refresh">↻</button>
+  </div>
+
+  <!-- Filtres -->
+  <div class="filters">
+    <label>
+      <input type="checkbox" [(ngModel)]="ratedOnly" (change)="load()"> Notés seulement
+    </label>
+    <label>
+      Score min :
+      <input type="number" [(ngModel)]="minScore" min="0" max="10" step="0.5"
+             (change)="load()" class="input-small">
+    </label>
+  </div>
+
+  <div *ngIf="loading" class="status">Chargement…</div>
+  <div *ngIf="error" class="status error">{{ error }}</div>
+
+  <table *ngIf="!loading && !error && mazes.length > 0">
+    <thead>
+      <tr>
+        <th>Seed</th>
+        <th>Complexité</th>
+        <th>Note</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let m of mazes" (click)="select(m.seed)" class="row-selectable">
+        <td class="seed-cell">{{ m.seed }}</td>
+        <td>{{ m.complexity_score !== null ? (m.complexity_score | number:'1.2-2') : '—' }}</td>
+        <td class="stars">{{ stars(m.rating) }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div *ngIf="!loading && !error && mazes.length === 0" class="status">
+    Aucun maze trouvé.
+  </div>
+</div>

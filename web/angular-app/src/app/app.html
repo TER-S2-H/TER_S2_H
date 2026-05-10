@@ -1,0 +1,19 @@
+<div class="layout">
+  <!-- Colonne gauche : le jeu -->
+  <aside class="col-game">
+    <app-game></app-game>
+  </aside>
+
+  <!-- Colonne droite : panneau API -->
+  <main class="col-panel">
+    <div class="panel-section">
+      <app-maze-list (seedSelected)="onSeedSelected($event)"></app-maze-list>
+    </div>
+
+    <div class="panel-divider"></div>
+
+    <div class="panel-section">
+      <app-rating [seed]="selectedSeed"></app-rating>
+    </div>
+  </main>
+</div>

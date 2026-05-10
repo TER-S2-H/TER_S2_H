@@ -1,0 +1,11 @@
+{
+  "/api": {
+    "target": "https://pacman-s2-h.onrender.com",
+    "secure": true,
+    "changeOrigin": true,
+    "pathRewrite": {
+      "^/api": ""
+    },
+    "logLevel": "debug"
+  }
+}
