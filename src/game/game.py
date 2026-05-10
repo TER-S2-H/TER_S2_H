@@ -1,4 +1,5 @@
 import sys
+import os
 import math
 import pygame
 
@@ -97,102 +98,109 @@ class Game:
         paused  = False
         running = True
 
-        while running:
-            clock.tick(FPS)
-            self._frame += 1
+        try:
+            while running:
+                clock.tick(FPS)
+                self._frame += 1
 
-            # ── Événements ────────────────────────────────────────────────
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-                if event.type == pygame.KEYDOWN:
-                    if event.key in (pygame.K_ESCAPE, pygame.K_q):
+                # ── Événements ────────────────────────────────────────────────
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
                         running = False
-                    if event.key == pygame.K_p:
-                        paused = not paused
-                    if event.key == pygame.K_r and env.game_over:
-                        env = Environment(seed=self.seed, base_url=self.base_url)
-                        env.load_maze()
-                        ghosts = ([] if self._no_ghosts else
-                                  [get_ghost_agent(self._ai, i, gx, gy)
-                                   for i, (gx, gy) in enumerate(GHOST_START_POSITIONS)])
-                        env.ghosts = ghosts
-                        pacman = self._pacman_agent or PacManAgent()
-                        self._bonus_given  = False
-                        self._caught_coups = None
-                        self._coups        = 0
-                        self._frame = 0
-                        self._maze_surf = None
-                        if self.record:
-                            recorder = Recorder(seed=env.seed)
-                        pygame.display.set_caption(f"Pac-Man  —  seed {env.seed}")
-                    pacman.handle_event(event)
+                    if event.type == pygame.KEYDOWN:
+                        if event.key in (pygame.K_ESCAPE, pygame.K_q):
+                            running = False
+                        if event.key == pygame.K_p:
+                            paused = not paused
+                        if event.key == pygame.K_r and env.game_over:
+                            env = Environment(seed=self.seed, base_url=self.base_url)
+                            env.load_maze()
+                            ghosts = ([] if self._no_ghosts else
+                                      [get_ghost_agent(self._ai, i, gx, gy)
+                                       for i, (gx, gy) in enumerate(GHOST_START_POSITIONS)])
+                            env.ghosts = ghosts
+                            pacman = self._pacman_agent or PacManAgent()
+                            self._bonus_given  = False
+                            self._caught_coups = None
+                            self._coups        = 0
+                            self._frame = 0
+                            self._maze_surf = None
+                            if self.record:
+                                recorder = Recorder(seed=env.seed)
+                            pygame.display.set_caption(f"Pac-Man  —  seed {env.seed}")
+                        pacman.handle_event(event)
 
-            # ── Game Over ──────────────────────────────────────────────────
-            if env.game_over:
+                # ── Game Over ──────────────────────────────────────────────────
+                if env.game_over:
+                    self._draw(screen, env, font)
+                    msg      = font_big.render("GAME OVER", True, (255, 0, 0))
+                    coups_txt = (f"Attrapé en {self._caught_coups} coups"
+                                 if self._caught_coups is not None else "")
+                    caught_s = font.render(coups_txt, True, C["text_yellow"])
+                    hint     = font.render("R = rejouer  |  Q = quitter", True, C["text"])
+                    y_msg    = win_h//2 - msg.get_height()//2
+                    y_caught = y_msg + msg.get_height() + 8
+                    y_hint   = y_caught + caught_s.get_height() + 6
+                    screen.blit(msg,      (win_w//2 - msg.get_width()//2,      y_msg))
+                    screen.blit(caught_s, (win_w//2 - caught_s.get_width()//2, y_caught))
+                    screen.blit(hint,     (win_w//2 - hint.get_width()//2,     y_hint))
+                    pygame.display.flip()
+                    continue
+
+                # ── Pause ──────────────────────────────────────────────────────
+                if paused:
+                    self._draw(screen, env, font)
+                    msg = font_big.render("PAUSE", True, C["text_yellow"])
+                    screen.blit(msg, (win_w//2 - msg.get_width()//2,
+                                      win_h//2 - msg.get_height()//2))
+                    pygame.display.flip()
+                    continue
+
+                # ── Niveau suivant ─────────────────────────────────────────────
+                if env.level_complete:
+                    env.next_level()
+                    self._bonus_given = False
+                    self._maze_surf = None   # reconstruire la surface du labyrinthe
+                    continue
+
+                # ── Tick logique (pas à chaque frame) ─────────────────────────
+                if self._frame % FRAMES_PER_TICK == 0:
+                    state = env.get_state()
+                    actions = {"pacman": pacman.get_action(state)}
+                    for i, g in enumerate(ghosts):
+                        actions[f"ghost_{i}"] = g.get_action(state)
+
+                    px_before, py_before = env.pacman_x, env.pacman_y
+                    env.update(actions)
+                    if (env.pacman_x, env.pacman_y) != (px_before, py_before):
+                        self._coups += 1
+                    if env.game_over and self._caught_coups is None:
+                        self._caught_coups = self._coups
+                    pacman.confirm_direction(env.pacman_dir)
+
+                    if not self._bonus_given and env.score >= BONUS_LIFE_THRESHOLD:
+                        env.lives += 1
+                        self._bonus_given = True
+                        print("[Game] Vie bonus accordée !")
+
+                    if recorder is not None:
+                        recorder.record(actions, env.get_grid_snapshot())
+
+                # ── Rendu (chaque frame pour la fluidité) ─────────────────────
                 self._draw(screen, env, font)
-                msg      = font_big.render("GAME OVER", True, (255, 0, 0))
-                coups_txt = (f"Attrapé en {self._caught_coups} coups"
-                             if self._caught_coups is not None else "")
-                caught_s = font.render(coups_txt, True, C["text_yellow"])
-                hint     = font.render("R = rejouer  |  Q = quitter", True, C["text"])
-                y_msg    = win_h//2 - msg.get_height()//2
-                y_caught = y_msg + msg.get_height() + 8
-                y_hint   = y_caught + caught_s.get_height() + 6
-                screen.blit(msg,      (win_w//2 - msg.get_width()//2,      y_msg))
-                screen.blit(caught_s, (win_w//2 - caught_s.get_width()//2, y_caught))
-                screen.blit(hint,     (win_w//2 - hint.get_width()//2,     y_hint))
                 pygame.display.flip()
-                continue
 
-            # ── Pause ──────────────────────────────────────────────────────
-            if paused:
-                self._draw(screen, env, font)
-                msg = font_big.render("PAUSE", True, C["text_yellow"])
-                screen.blit(msg, (win_w//2 - msg.get_width()//2,
-                                  win_h//2 - msg.get_height()//2))
-                pygame.display.flip()
-                continue
-
-            # ── Niveau suivant ─────────────────────────────────────────────
-            if env.level_complete:
-                env.next_level()
-                self._bonus_given = False
-                self._maze_surf = None   # reconstruire la surface du labyrinthe
-                continue
-
-            # ── Tick logique (pas à chaque frame) ─────────────────────────
-            if self._frame % FRAMES_PER_TICK == 0:
-                state = env.get_state()
-                actions = {"pacman": pacman.get_action(state)}
-                for i, g in enumerate(ghosts):
-                    actions[f"ghost_{i}"] = g.get_action(state)
-
-                px_before, py_before = env.pacman_x, env.pacman_y
-                env.update(actions)
-                if (env.pacman_x, env.pacman_y) != (px_before, py_before):
-                    self._coups += 1
-                if env.game_over and self._caught_coups is None:
-                    self._caught_coups = self._coups
-                pacman.confirm_direction(env.pacman_dir)
-
-                if not self._bonus_given and env.score >= BONUS_LIFE_THRESHOLD:
-                    env.lives += 1
-                    self._bonus_given = True
-                    print("[Game] Vie bonus accordée !")
-
-                if recorder:
-                    recorder.record(actions, env.get_grid_snapshot())
-
-            # ── Rendu (chaque frame pour la fluidité) ─────────────────────
-            self._draw(screen, env, font)
-            pygame.display.flip()
-
-        if recorder:
-            recorder.coups = self._caught_coups if self._caught_coups is not None else self._coups
-            recorder.save("recording.json")
-        pygame.quit()
-        sys.exit(0)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            if recorder is not None:
+                recorder.coups = (self._caught_coups
+                                  if self._caught_coups is not None
+                                  else self._coups)
+                save_path = os.path.abspath("recording.json")
+                print(f"Sauvegarde en cours... → {save_path}")
+                recorder.save(save_path)
+            pygame.quit()
 
     # ── Rendu principal ──────────────────────────────────────────────────────
     def _draw(self, screen, env, font):
