@@ -12,6 +12,7 @@ import json
 import pytest
 import sys
 import os
+import unittest.mock
 
 # Permet d'importer app.py depuis la racine du projet
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -191,3 +192,171 @@ class TestMaze:
         response = client.get("/maze?seed=abc")
         data = response.get_json()
         assert "error" in data
+
+
+# -------------------------------------------------------------------
+# Tests sur GET /maze/<seed>
+# -------------------------------------------------------------------
+
+_MAZE_DOC_42 = {
+    "_id": 42,
+    "seed": 42,
+    "maze_data": {
+        "seed": 42,
+        "metadata": {"width": 28, "height": 31, "node_count": 10, "edge_count": 9,
+                     "energizer_count": 2},
+        "nodes": [{"x": 1, "y": 1, "type": "PATH"}],
+        "edges": [{"from": "1,1", "to": "2,1"}],
+        "walls": [{"x": 0, "y": 0}],
+        "ghost_walls": [{"x": 13, "y": 12}],
+        "energizers": [{"x": 1, "y": 3}],
+    },
+}
+
+
+class TestGetMazeBySeed:
+
+    def test_status_200_seed_existant(self, client, mock_mongodb):
+        """GET /maze/<seed> avec un seed stocké → 200."""
+        mock_mongodb.find_one.return_value = _MAZE_DOC_42
+        response = client.get("/maze/42")
+        assert response.status_code == 200
+
+    def test_contient_maze_data(self, client, mock_mongodb):
+        """La réponse doit contenir les données du maze."""
+        mock_mongodb.find_one.return_value = _MAZE_DOC_42
+        response = client.get("/maze/42")
+        data = response.get_json()
+        assert "seed" in data
+        assert data["seed"] == 42
+
+    def test_seed_inconnu_retourne_404(self, client, mock_mongodb):
+        """GET /maze/<seed> avec un seed inexistant → 404."""
+        mock_mongodb.find_one.return_value = None
+        response = client.get("/maze/999999")
+        assert response.status_code == 404
+
+    def test_404_contient_message_erreur(self, client, mock_mongodb):
+        """Le message 404 doit être explicite."""
+        mock_mongodb.find_one.return_value = None
+        response = client.get("/maze/999999")
+        data = response.get_json()
+        assert "error" in data
+
+
+# -------------------------------------------------------------------
+# Tests sur GET /mazes
+# -------------------------------------------------------------------
+class TestListMazes:
+
+    def test_status_200(self, client):
+        """GET /mazes → 200."""
+        response = client.get("/mazes")
+        assert response.status_code == 200
+
+    def test_retourne_liste(self, client):
+        """GET /mazes doit retourner une liste JSON."""
+        response = client.get("/mazes")
+        data = response.get_json()
+        assert isinstance(data, list)
+
+    def test_filtre_limit(self, client):
+        """Le paramètre limit est accepté sans erreur."""
+        response = client.get("/mazes?limit=5")
+        assert response.status_code == 200
+
+    def test_filtre_rated_only(self, client):
+        """Le paramètre rated_only=true est accepté sans erreur."""
+        response = client.get("/mazes?rated_only=true")
+        assert response.status_code == 200
+
+    def test_filtre_min_score(self, client):
+        """Le paramètre min_score=3 est accepté sans erreur."""
+        response = client.get("/mazes?min_score=3")
+        assert response.status_code == 200
+
+    def test_limit_invalide_retourne_400(self, client):
+        """Un paramètre limit non numérique → 400."""
+        response = client.get("/mazes?limit=abc")
+        assert response.status_code == 400
+
+    def test_min_score_invalide_retourne_400(self, client):
+        """Un paramètre min_score non numérique → 400."""
+        response = client.get("/mazes?min_score=xyz")
+        assert response.status_code == 400
+
+
+# -------------------------------------------------------------------
+# Tests sur PATCH /maze/<seed>/rate
+# -------------------------------------------------------------------
+class TestRateMaze:
+
+    def test_rating_valide_retourne_200(self, client, mock_mongodb):
+        """PATCH /maze/<seed>/rate avec rating=3 → 200."""
+        mock_mongodb.update_one.return_value = unittest.mock.MagicMock(matched_count=1)
+        response = client.patch("/maze/42/rate",
+                                json={"rating": 3},
+                                content_type="application/json")
+        assert response.status_code == 200
+
+    def test_reponse_contient_seed_et_rating(self, client, mock_mongodb):
+        """La réponse 200 doit confirmer le seed et la note."""
+        mock_mongodb.update_one.return_value = unittest.mock.MagicMock(matched_count=1)
+        response = client.patch("/maze/42/rate",
+                                json={"rating": 3},
+                                content_type="application/json")
+        data = response.get_json()
+        assert data["seed"] == 42
+        assert data["rating"] == 3
+
+    def test_rating_zero_valide(self, client, mock_mongodb):
+        """rating=0 est une valeur limite valide → 200."""
+        mock_mongodb.update_one.return_value = unittest.mock.MagicMock(matched_count=1)
+        response = client.patch("/maze/42/rate",
+                                json={"rating": 0},
+                                content_type="application/json")
+        assert response.status_code == 200
+
+    def test_rating_cinq_valide(self, client, mock_mongodb):
+        """rating=5 est la valeur maximale valide → 200."""
+        mock_mongodb.update_one.return_value = unittest.mock.MagicMock(matched_count=1)
+        response = client.patch("/maze/42/rate",
+                                json={"rating": 5},
+                                content_type="application/json")
+        assert response.status_code == 200
+
+    def test_rating_trop_eleve_retourne_400(self, client):
+        """rating=6 dépasse le maximum → 400."""
+        response = client.patch("/maze/42/rate",
+                                json={"rating": 6},
+                                content_type="application/json")
+        assert response.status_code == 400
+
+    def test_rating_negatif_retourne_400(self, client):
+        """rating=-1 est négatif → 400."""
+        response = client.patch("/maze/42/rate",
+                                json={"rating": -1},
+                                content_type="application/json")
+        assert response.status_code == 400
+
+    def test_rating_manquant_retourne_400(self, client):
+        """Corps JSON sans champ rating → 400."""
+        response = client.patch("/maze/42/rate",
+                                json={},
+                                content_type="application/json")
+        assert response.status_code == 400
+
+    def test_rating_non_entier_retourne_400(self, client):
+        """rating flottant (2.5) → 400 (doit être un entier)."""
+        response = client.patch("/maze/42/rate",
+                                json={"rating": 2.5},
+                                content_type="application/json")
+        assert response.status_code == 400
+
+    def test_seed_inconnu_retourne_404(self, client, mock_mongodb):
+        """Seed inexistant (matched_count=0) → 404."""
+        mock_mongodb.update_one.return_value = unittest.mock.MagicMock(matched_count=0)
+        response = client.patch("/maze/999999/rate",
+                                json={"rating": 3},
+                                content_type="application/json")
+        assert response.status_code == 404

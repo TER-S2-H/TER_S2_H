@@ -81,19 +81,10 @@ class MazeRenderer:
             )
         
         elif tile.state == Tile.GHOSTWALL:
-            # Draw ghost wall as horizontal line
+            # Draw ghost wall as horizontal line at the midpoint of the tile
             line_y = y + self.tile_size // 2
             draw.rectangle(
                 [x, line_y - 1, x + self.tile_size - 1, line_y + 1],
-                fill=self.ghost_wall_color
-            )
-        
-        elif tile.state == Tile.GHOSTWALL:
-            # Draw ghost wall as horizontal bar
-            wall_height = max(self.tile_size // 4, 2)
-            wall_offset = (self.tile_size - wall_height) // 2
-            draw.rectangle(
-                [x, y + wall_offset, x + self.tile_size - 1, y + wall_offset + wall_height],
                 fill=self.ghost_wall_color
             )
     

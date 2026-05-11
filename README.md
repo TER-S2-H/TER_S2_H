@@ -95,6 +95,7 @@ Le serveur tourne sur http://localhost:5000
     "height": 31,
     "node_count": 326,
     "edge_count": 347,
+    "energizer_count": 2,
     "complexity_score": {
       "score": 2.89,
       "steps": 403,
@@ -104,10 +105,11 @@ Le serveur tourne sur http://localhost:5000
       "num_tunnels": 1
     }
   },
-  "nodes": [{"id": "1,1", "x": 1, "y": 1, "type": "PATH"}, "..."],
+  "nodes": [{"x": 1, "y": 1, "type": "PATH"}, "..."],
   "edges": [{"from": "1,1", "to": "2,1"}, "..."],
   "walls": [{"x": 0, "y": 0}, "..."],
-  "ghost_walls": [{"x": 13, "y": 12}, "..."]
+  "ghost_walls": [{"x": 13, "y": 12}, "..."],
+  "energizers": [{"x": 1, "y": 3}, "..."]
 }
 ```
 
