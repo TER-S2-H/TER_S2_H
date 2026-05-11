@@ -451,6 +451,7 @@ class GameState:
     ghost_in_house: List[bool] = field(init=False)
     ghost_house_paths: List[List[Coord]] = field(init=False)
     ghost_house_progress: List[int] = field(init=False)
+    ghost_release_delays: List[int] = field(init=False)
 
     active_pellets: Set[int] = field(init=False)
     active_energizers: Set[int] = field(init=False)
@@ -460,12 +461,14 @@ class GameState:
 
     def __post_init__(self):
         self.pacman_pos = self.pacman_spawn
+        self.pacman_prev = None
         self.ghost_positions = list(self.ghost_spawns)
         self.ghost_prev = [None, None, None, None]
         self.ghost_frightened = [0, 0, 0, 0]
         self.ghost_in_house = [True, True, True, True]
         self.ghost_house_paths = default_house_release_paths()
         self.ghost_house_progress = [0, 0, 0, 0]
+        self.ghost_release_delays = [0, 10, 20, 30]
 
         # If a release endpoint does not exist in graph, disable house mode for that ghost.
         for i in range(4):
@@ -677,7 +680,44 @@ def check_crossing(
     return False
 
 
-def step(state: GameState, is_first_step: bool):
+def action_to_node(state: GameState, pos: int, action: int, exclude: int = None) -> int:
+    deltas = [(0, -1), (0, 1), (-1, 0), (1, 0), (0, 0)]
+    if action is None or action == 4:
+        return pos
+    dx, dy = deltas[action]
+    cx, cy = state.index_to_coord[pos]
+
+    target = (cx + dx, cy + dy)
+    if target in state.node_to_index:
+        neighbor = state.node_to_index[target]
+        if neighbor in state.adjacency[pos] and neighbor not in state.ghost_wall_nodes:
+            if neighbor != exclude:
+                return neighbor
+
+    for neighbor in state.adjacency[pos]:
+        if neighbor in state.ghost_wall_nodes or neighbor == exclude:
+            continue
+        nx, ny = state.index_to_coord[neighbor]
+        if dx != 0 and ny == cy and abs(nx - cx) > 1:
+            if (dx < 0 and nx > cx) or (dx > 0 and nx < cx):
+                return neighbor
+        if dy != 0 and nx == cx and abs(ny - cy) > 1:
+            if (dy < 0 and ny > cy) or (dy > 0 and ny < cy):
+                return neighbor
+
+    # Direction bloquée — voisin valide le plus aligné (sans retour)
+    valid = [n for n in state.adjacency[pos]
+             if n not in state.ghost_wall_nodes and n != exclude]
+    if valid:
+        return min(valid, key=lambda n: abs(
+            (state.index_to_coord[n][0] - cx) - dx
+        ) + abs(
+            (state.index_to_coord[n][1] - cy) - dy
+        ))
+    return pos
+
+
+def step(state: GameState, is_first_step: bool, pacman_action: int = None, ghost_actions: list = None):
     """Execute one full simultaneous step and return (done, outcome)."""
     # 1. Pre-move collision check.
     if check_collision(state):
@@ -700,9 +740,20 @@ def step(state: GameState, is_first_step: bool):
             )
 
     # 3. Compute intended moves in parallel.
-    next_pacman = choose_pacman_move(state, vis_pac, is_first_step=is_first_step)
+    if pacman_action is not None:
+        prev_pac = state.ghost_prev[0] if hasattr(state, 'pacman_prev') else None
+        next_pacman = action_to_node(state, state.pacman_pos, pacman_action, exclude=prev_pac)
+    else:
+        next_pacman = choose_pacman_move(state, vis_pac, is_first_step=is_first_step)
 
-    next_ghosts = [choose_ghost_move(state, i, vis_ghosts[i]) for i in range(4)]
+    if ghost_actions is not None:
+        next_ghosts = [
+            action_to_node(state, state.ghost_positions[i], ghost_actions[i],
+                        exclude=state.ghost_prev[i])
+            for i in range(4)
+        ]
+    else:
+        next_ghosts = [choose_ghost_move(state, i, vis_ghosts[i]) for i in range(4)]
 
     old_in_house = list(state.ghost_in_house)
 
@@ -714,12 +765,16 @@ def step(state: GameState, is_first_step: bool):
     state.ghost_prev = list(state.ghost_positions)
 
     # 5. Apply moves simultaneously.
+    state.pacman_prev = state.pacman_pos
     state.pacman_pos = next_pacman
     state.ghost_positions = next_ghosts
 
     # Progress in-house ghosts toward the entry and activate them once they reach endpoint.
     for i in range(4):
         if not state.ghost_in_house[i]:
+            continue
+        if state.ghost_release_delays[i] > 0:
+            state.ghost_release_delays[i] -= 1
             continue
         if state.ghost_house_progress[i] < len(state.ghost_house_paths[i]) - 1:
             state.ghost_house_progress[i] += 1
@@ -753,7 +808,7 @@ def step(state: GameState, is_first_step: bool):
 
     if state.pacman_pos in state.active_energizers:
         state.active_energizers.remove(state.pacman_pos)
-        state.ghost_frightened = [10, 10, 10, 10]
+        state.ghost_frightened = [72, 72, 72, 72]
 
     if check_collision(state):
         state.record_frame(step=state.step_count)

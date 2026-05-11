@@ -199,16 +199,15 @@ class HierarchicalJEPAcman(nn.Module):
 
         return subgoals   # liste de j/k embeddings objectifs
 
-    def choose_action(self, seq, e_subgoal):
-        # Niveau 1 — choisir l'action qui rapproche le plus du sous-objectif courant
+    def choose_action(self, seq, e_subgoal, forbidden: set = None):
         best_action, best_dist = None, float('inf')
-
         for a in range(4):
+            if forbidden and a in forbidden:
+                continue
             action = torch.full((seq.shape[0],), a, dtype=torch.long, device=seq.device)
             e_pred = self.predictor_1(seq, action)
             dist   = F.mse_loss(e_pred, e_subgoal).item()
             if dist < best_dist:
-                best_dist  = dist
+                best_dist   = dist
                 best_action = a
-
-        return best_action
+        return best_action if best_action is not None else 0

@@ -50,7 +50,7 @@ def step_supervised(obs_dir, meta_dir, jepa_weights, jepa_config,
 
 
 def step_rl(jepa_weights, jepa_config, maze_dir,
-            n_episodes, rl_lr, save_every):
+            n_episodes, rl_lr, save_every, render, render_every, render_fps):
     print("\n" + "=" * 60)
     print("ÉTAPE 2 — Fine-tuning par renforcement")
     print("=" * 60)
@@ -63,6 +63,9 @@ def step_rl(jepa_weights, jepa_config, maze_dir,
         n_episodes   = n_episodes,
         lr           = rl_lr,
         save_every   = save_every,
+        render=render, 
+        render_every=render_every,
+        render_fps=render_fps
     )
     print("\n✓ Fine-tuning RL terminé")
 
@@ -88,6 +91,9 @@ def main():
     parser.add_argument("--n-episodes",  type=int,   default=200)
     parser.add_argument("--rl-lr",       type=float, default=1e-4)
     parser.add_argument("--save-every",  type=int,   default=50)
+    parser.add_argument("--render",        action="store_true")
+    parser.add_argument("--render-every",  type=int,   default=10)
+    parser.add_argument("--render-fps",    type=int,   default=12)
 
     # Reprises partielles
     parser.add_argument("--skip-supervised", action="store_true",
@@ -123,6 +129,9 @@ def main():
                 n_episodes   = args.n_episodes,
                 rl_lr        = args.rl_lr,
                 save_every   = args.save_every,
+                render       = args.render,
+                render_every = args.render_every,
+                render_fps   = args.render_fps,
             )
         else:
             print("\n⚠ Étape RL ignorée (--skip-rl)")
