@@ -1,0 +1,18 @@
+networkx
+numpy
+flask
+pillow
+gunicorn
+requests
+pymongo[srv]
+python-dotenv
+
+# JEPAcman
+torch>=2.0.0
+pytorch-lightning>=2.0.0
+optuna>=3.0.0
+lightning
+optuna-integration[pytorch_lightning]
+plotly>=5.0.0        # pour les visualisations optuna
+kaleido             # export des figures plotly en HTML
+numpy>=1.24.0

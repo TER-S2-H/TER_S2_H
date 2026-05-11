@@ -1,0 +1,61 @@
+
+
+name: CI/CD — Tests et déploiement
+
+# Déclencheur : uniquement sur push vers main
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+
+  # -----------------------------------------------------------
+  # JOB 1 : Tests
+  # -----------------------------------------------------------
+  tests:
+    name: Lancer les tests pytest
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Récupérer le code du repo
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      # 2. Installer Python
+      - name: Installer Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3. Installer les dépendances serveur + pytest
+      - name: Installer les dépendances
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+
+      # 4. Lancer les tests fonctionnels (pas besoin de connexion internet)
+      - name: Tests fonctionnels — API locale
+        run: python -m pytest tests/test_api_local.py -v
+
+      # 5. Lancer les tests des propriétés du maze
+      - name: Tests des propriétés du maze
+        run: python -m pytest tests/test_maze_properties.py -v
+
+      # Note : on ne lance PAS test_api_cloud.py ici car ces tests
+      # appellent Render qui n'est pas encore redéployé à ce stade.
+
+  # -----------------------------------------------------------
+  # JOB 2 : Déploiement sur Render
+  # Déclenché UNIQUEMENT si le job "tests" a réussi
+  # -----------------------------------------------------------
+  deploy:
+    name: Déployer sur Render
+    runs-on: ubuntu-latest
+    needs: tests        # ← dépend du job tests : si tests échoue, deploy ne tourne pas
+
+    steps:
+      - name: Déclencher le déploiement sur Render
+        run: |
+          curl -s "${{ secrets.RENDER_DEPLOY_HOOK }}"
+          echo "Déploiement déclenché sur Render "

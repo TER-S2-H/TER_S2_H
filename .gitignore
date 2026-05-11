@@ -26,3 +26,14 @@ output/
 # OS
 .DS_Store
 Thumbs.db
+generated_maze/
+
+# Environment variables (credentials locales — ne jamais committer)
+.env
+
+jepa_sessions/
+sessions/
+lightning_logs/
+jepa_numpy/
+jepa_meta/
+sessions_jepa/

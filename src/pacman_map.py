@@ -925,10 +925,11 @@ class PacmanMap:
         Export maze as a graph representation in JSON format.
         
         Graph representation:
-        - Nodes: All walkable tiles (simplified, no pellet/energizer distinction)
+        - Nodes: All walkable tiles
         - Edges: Adjacency between adjacent walkable tiles
         - Walls: Non-walkable tiles
         - Ghost walls: Ghost house door
+        - Energizers: Power pellets
         
         Args:
             output_file: Optional file path to save JSON. If None, returns dict.
@@ -943,7 +944,7 @@ class PacmanMap:
         height = len(tile_map[0])
         width = len(tile_map)
         
-        # Simplified tile type names (no pellet/energizer distinction)
+        # Keep node types stable for existing clients.
         tile_type_names = {
             Tile.BLANK: "BLANK",
             Tile.PATH: "PATH",
@@ -955,10 +956,11 @@ class PacmanMap:
         }
         
         # Step 2: Identify all tiles with their types
-        nodes: Dict[str, Dict] = {}  # id -> {id, x, y, type}
+        nodes: Dict[str, Dict] = {}  # "x,y" -> {x, y, type}
         walkable_positions: Set[Tuple[int, int]] = set()  # for quick lookup
         walls = []
         ghost_walls = []
+        energizers = []
         
         for y in range(height):
             for x in range(width):
@@ -968,12 +970,14 @@ class PacmanMap:
                 if state in [Tile.PATH, Tile.PATHBLANK, Tile.ENERGIZER]:
                     node_id = f"{x},{y}"
                     nodes[node_id] = {
-                        "id": node_id,
                         "x": x,
                         "y": y,
                         "type": tile_type_names[state]
                     }
                     walkable_positions.add((x, y))
+
+                    if state == Tile.ENERGIZER:
+                        energizers.append({"x": x, "y": y})
                 
                 # Track walls
                 elif state == Tile.WALL:
@@ -1011,11 +1015,13 @@ class PacmanMap:
                 "height": height,
                 "node_count": len(nodes),
                 "edge_count": len(edges),
+                "energizer_count": len(energizers)
             },
             "nodes": list(nodes.values()),
             "edges": edges,
             "walls": walls,
             "ghost_walls": ghost_walls,
+            "energizers": energizers
         }
         
         # Optional: save to file

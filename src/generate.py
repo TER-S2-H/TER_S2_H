@@ -64,7 +64,7 @@ def main():
         print(f"Generated after {maze.gen_count} attempts")
     
     # Create output directory
-    output_dir = f"maze_{seed}" if args.output == 'maze' else args.output
+    output_dir = os.path.join("generated_maze", f"maze_{seed}") if args.output == 'maze' else args.output
     os.makedirs(output_dir, exist_ok=True)
     
     # Determine what to generate

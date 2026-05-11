@@ -1,291 +1,284 @@
-# Pac-Man Maze Generator & Game
+# TER S2 — Pac-Man Maze Generator — Groupe H
 
-Generate random Pac-Man-style mazes, score them, animate the optimal path, and play them interactively.
+Générateur de maze Pac-Man exposé en tant que web service HTTP, déployé sur Render.
 
-## Requirements
-
-Python 3.6+ with:
-
-```bash
-pip install Pillow          # maze generation, rendering, GIF output
-pip install pygame          # interactive game only
-```
-
-## Quick Start
-
-```bash
-# 1. Generate a maze (JSON + PNG + TXT — maze structure only, no pellets)
-python3 generate.py --seed 42
-
-# 2. Score it (embeds complexity score in maze.json)
-python3 maze_complexity.py maze_42/maze.json -v
-
-# 3. Animate the best-found path
-python3 maze_complexity_visualize.py maze_42/maze.json -v
-
-# 4. Play it!
-python3 pacman_game.py maze_42/maze.json
-```
-
-Output folder `maze_[seed]/` contains:
-- `maze.json` — Graph + embedded complexity score (maze structure only)
-- `maze.png` — Visual rendering (560×620 px at 20 px/tile, maze structure only)
-- `maze.txt` — ASCII art (maze structure only)
-- `maze_path.gif` — Animated optimal path (after running the visualizer)
+**URL du service :** https://pacman-s2-h.onrender.com
 
 ---
 
-## Usage
+## Installation
 
-### Generate a Maze
-
-```bash
-python3 generate.py [options]
-```
-
-| Option | Default | Description |
-|---|---|---|
-| `-o, --output PATH` | `maze_[seed]` | Output folder name |
-| `--seed SEED` | random | Reproducible seed |
-| `-s, --size SIZE` | `20` | Tile size in pixels |
-| `--json-only` | — | Skip PNG and TXT |
-| `--png-only` | — | Skip JSON and TXT |
-| `--text-only` | — | Skip JSON and PNG |
-| `-v, --verbose` | — | Verbose output |
+Python 3.8+ requis.
 
 ```bash
-python3 generate.py --seed 42
-python3 generate.py -o my_maze -s 30
-python3 generate.py --json-only
+# Dépendances serveur (API Flask + générateur)
+pip install -r requirements.txt
+
+# Dépendances client local (visualisation Pygame + jeu)
+pip install -r requirements-client.txt
 ```
+
+> `requirements.txt` est utilisé par Render pour le déploiement — il ne contient
+> pas pygame qui n'est utile qu'en local. C'est pourquoi il y a deux fichiers séparés.
 
 ---
 
-### Render from JSON
+## Structure du projet
 
-Re-render a maze image from an existing `maze.json`:
-
-```bash
-python3 render_json.py <maze.json> [options]
 ```
-
-| Option | Default | Description |
-|---|---|---|
-| `-o, --output PATH` | auto | Output image path |
-| `-s, --size SIZE` | `20` | Tile size in pixels |
-| `--show-graph` | — | Overlay nodes and edges |
-| `-v, --verbose` | — | Verbose output |
-
-```bash
-python3 render_json.py maze_42/maze.json
-python3 render_json.py maze_42/maze.json -o out.png -s 30 --show-graph
+├── app.py                        # API Flask (serveur web)
+├── main.py                       # Point d'entrée du jeu Pac-Man
+├── client.py                     # Visualisation Pygame du maze (client local)
+├── generate.py                   # Générateur en ligne de commande (wrapper)
+├── maze_complexity.py            # Score de complexité (wrapper)
+├── maze_complexity_visualize.py  # Visualisation du chemin (wrapper)
+├── render_json.py                # Rendu depuis JSON (wrapper)
+├── Procfile                      # Configuration Render
+├── requirements.txt              # Dépendances serveur (Render)
+├── requirements-client.txt       # Dépendances client local
+├── .github/
+│   └── workflows/
+│       └── deploy.yml            # CI/CD GitHub Actions
+├── src/
+│   ├── pacman_map.py             # Logique de génération du maze
+│   ├── maze_renderer.py          # Rendu PNG
+│   ├── maze_complexity.py        # Calcul du score de complexité
+│   ├── maze_complexity_visualize.py
+│   ├── generate.py
+│   ├── render_json.py
+│   ├── database/
+│   │   └── db.py                 # Connexion MongoDB (notation des mazes)
+│   └── game/
+│       ├── agent.py              # Classe de base Agent / enum Direction
+│       ├── environment.py        # Environnement du jeu (grille, collisions)
+│       ├── game.py               # Boucle principale (rendu + logique)
+│       ├── ghost.py              # Fantômes + factory d'IA (_GHOST_REGISTRY)
+│       ├── pacman_agent.py       # Agents Pac-Man (clavier et replay)
+│       ├── pellet.py             # Gestion des pellets
+│       └── recorder.py           # Enregistrement de partie (JSON)
+└── tests/
+    ├── test_api_local.py         # Tests fonctionnels (Flask test client)
+    ├── test_maze_properties.py   # Tests caractéristiques du maze
+    ├── test_api_cloud.py         # Tests end-to-end (Render)
+    ├── curl_examples.sh          # Exemples de commandes curl
+    └── conftest.py               # Configuration pytest (mock MongoDB)
 ```
 
 ---
 
-### Play the Game
+## Web Service (API HTTP)
 
-Loads a `maze.json` and launches an interactive Pac-Man game.
-Pellets, energizers, and Pac-Man are **not** stored in the JSON — they are
-computed at runtime from the maze graph.
+### Lancer le serveur en local
 
 ```bash
-python3 pacman_game.py <maze.json> [options]
+python app.py
 ```
 
-| Option | Default | Description |
-|---|---|---|
-| `-s, --size SIZE` | `20` | Tile size in pixels |
+Le serveur tourne sur http://localhost:5000
 
-```bash
-python3 pacman_game.py maze_42/maze.json
-python3 pacman_game.py maze_42/maze.json -s 24
-```
+### Routes disponibles
 
-**Controls:**
+| Route | Méthode | Description |
+|-------|---------|-------------|
+| `/` | GET | Documentation de l'API |
+| `/health` | GET | Vérification que le service est en ligne |
+| `/maze` | GET | Génère un maze (seed aléatoire) |
+| `/maze?seed=42` | GET | Génère un maze reproductible |
 
-| Key | Action |
-|---|---|
-| Arrow keys | Move Pac-Man |
-| `R` | Restart |
-| `Q` / `Escape` | Quit |
-
-**Gameplay features:**
-- **4 ghosts** — Blinky (red), Pinky (pink), Inky (cyan), Clyde (orange) — each with
-  classic targeting behaviour from the original arcade game.
-- **Ghost modes** cycle automatically: scatter → chase → scatter → chase (repeating).
-  Eating a power pellet triggers **frightened** mode (ghosts flash before returning).
-- **Ghost house:** ghosts start inside, patrol left/right, then exit via the house door
-  one by one on a staggered release schedule (Blinky instant, +3 s each after).
-- **Lives system** (3 lives). Touched by a ghost → respawn; lose all lives → Game Over.
-- **Score:** dots = 10 pts, energizers = 50 pts, eating a frightened ghost = 200/400/800/1600 pts.
-- **Win condition:** clear all dots and energizers.
-
-**Pellet placement (auto-computed at runtime, not stored in `maze.json`):**
-- Every walkable `PATH` tile gets a pellet **except**:
-  - Ghost-house surround zone: `x ∈ [9, 18]`, `y ∈ [10, 16]`
-  - Tunnel edge columns: `x == 0` or `x == 27`
-  - Pac-Man spawn tile: `(13, 23)`
-- **4 energizers** placed near corner anchors `(1, 3)`, `(26, 3)`, `(1, 23)`, `(26, 23)`,
-  snapped to the nearest eligible tile.
-
-**Architecture:**
-- `GameState` — all mutable game data: maze graph, Pac-Man, 4 ghost AI agents, pellets,
-  score, lives, scatter/chase mode-cycle timer.
-- `GameRenderer` — pure drawing (no game logic): maze walls, pellets, energizers, Pac-Man
-  with mouth animation, ghost bodies with eyes (full colour / frightened flash / dead silhouette).
-- `GhostState` — per-ghost state machine (`waiting → exiting → scatter/chase/frightened/dead`).
-
----
-
-Computes the minimum steps to visit all food tiles from a fixed start position
-(open walk — no return required) and embeds the result in `maze.json`.
-
-**Problem:** Metric TSP Hamiltonian Path — NP-hard in general.
-
-**Algorithm:**
-- **≤ 20 nodes:** Held-Karp exact DP — provably optimal, O(2ⁿ · n²).
-- **> 20 nodes:** Multi-start local search (`ms-or3opt`):
-  1. Several greedy nearest-neighbour starts (first deterministic, rest with randomised top-3 tie-breaking).
-  2. Each start is refined through a full pipeline:
-     - Deterministic 2-opt (all pairs, repeat passes until convergence)
-     - Or-opt for chain lengths 1, 2, 3 (relocate + reverse, best-improvement)
-     - Second 2-opt pass (Or-opt can open new 2-opt gains)
-     - Random 3-opt segment-swap moves (escape local optima)
-     - Final 2-opt pass
-  3. The best result across all starts is kept.
-
-**Lower bound:** MST weight ≤ true optimum ≤ best found.
-The gap `best_found − mst_lower_bound` indicates how far from optimal the solution is.
-
-**Score formula:** `score = (food_count / steps) × 10` (capped at 10)
-
-```bash
-python3 maze_complexity.py <maze.json> [options]
-```
-
-| Option | Description |
-|---|---|
-| `--no-tunnel-wrap` | Disable left-right tunnel wrapping |
-| `--held-karp` | Force Held-Karp exact DP (requires ≤ 20 nodes) |
-| `-v, --verbose` | Print score, steps, food count, MST lower bound, method |
-
-```bash
-python3 maze_complexity.py maze_42/maze.json -v
-# Complexity score: 8.63 (steps: 373, food: 322, mst_lb: 321, method: ms-or3opt)
-```
-
----
-
-### Complexity Visualization
-
-Generates an animated GIF showing the best-found path walking through all food tiles:
-
-```bash
-python3 maze_complexity_visualize.py <maze.json> [options]
-```
-
-| Option | Default | Description |
-|---|---|---|
-| `-o, --output PATH` | `maze_path.gif` | Output GIF path |
-| `-s, --size SIZE` | `20` | Tile size in pixels |
-| `--frame-step N` | `5` | Steps per animation frame |
-| `--max-frames N` | `1000` | Maximum frames in GIF |
-| `--duration MS` | `150` | Frame duration in milliseconds |
-| `--no-tunnel-wrap` | — | Disable tunnel wrapping |
-| `-v, --verbose` | — | Print steps, method, MST lower bound |
-
-```bash
-python3 maze_complexity_visualize.py maze_42/maze.json -v
-python3 maze_complexity_visualize.py maze_42/maze.json -o path.gif --frame-step 3
-```
-
----
-
-## Project Structure
-
-```
-.
-├── generate.py                   — Wrapper: maze generator
-├── maze_complexity.py            — Wrapper: complexity scorer
-├── maze_complexity_visualize.py  — Wrapper: path animator
-├── render_json.py                — Wrapper: JSON renderer
-├── pacman_game.py                — Wrapper: interactive game
-└── src/
-    ├── generate.py               — Generator implementation
-    ├── maze_complexity.py        — Complexity scoring (TSP solver)
-    ├── maze_complexity_visualize.py — GIF animation
-    ├── render_json.py            — Image renderer
-    ├── pacman_map.py             — Maze generation logic
-    ├── maze_renderer.py          — Rendering helpers
-    └── pacman_game.py            — Game logic + pygame renderer
-
-maze_[seed]/                      — Generated output folder
-├── maze.json                     — Graph + complexity score (maze only)
-├── maze.png                      — Visual rendering (maze only)
-├── maze.txt                      — ASCII art (maze only)
-└── maze_path.gif                 — Animated path (optional)
-```
-
-> **Note:** `maze.json`, `maze.png`, and `maze.txt` contain only the maze
-> structure (walls, paths, graph). Pellets, energizers, and Pac-Man are
-> computed at runtime by `pacman_game.py` and never written to disk.
-
-All root-level scripts are thin wrappers that import from `src/` and call `main()`.
-
-## JSON Format
-
-Ghost-house tiles are excluded from `nodes` and `edges` but represented in `ghost_walls`.
-Left-right tunnel edges are added at runtime when `wrap_tunnels` is enabled.
+### Format de réponse `/maze`
 
 ```json
 {
-  "nodes": [
-    {"id": "1,1", "x": 1, "y": 1, "type": "PATH"}
-  ],
-  "edges": [
-    {"from": "1,1", "to": "2,1"}
-  ],
-  "walls": [
-    {"x": 0, "y": 0}
-  ],
-  "ghost_walls": [
-    {"x": 12, "y": 14}
-  ],
+  "seed": 42,
   "metadata": {
     "width": 28,
     "height": 31,
-    "node_count": 322,
-    "edge_count": 418,
+    "node_count": 326,
+    "edge_count": 347,
     "complexity_score": {
-      "start": {"x": 13, "y": 23},
-      "food_count": 322,
-      "steps": 373,
-      "score": 8.63,
-      "method": "ms-or3opt",
-      "mst_lower_bound": 321,
-      "wrap_tunnels": true,
-      "width": 28,
-      "height": 31
+      "score": 2.89,
+      "steps": 403,
+      "longest_trap": 13,
+      "avg_trap_len": 10.32,
+      "num_traps": 19,
+      "num_tunnels": 1
     }
-  }
+  },
+  "nodes": [{"id": "1,1", "x": 1, "y": 1, "type": "PATH"}, "..."],
+  "edges": [{"from": "1,1", "to": "2,1"}, "..."],
+  "walls": [{"x": 0, "y": 0}, "..."],
+  "ghost_walls": [{"x": 13, "y": 12}, "..."]
 }
 ```
 
-### `complexity_score` fields
+### Visualisation Pygame (client local)
 
-| Field | Description |
-|---|---|
-| `start` | Fixed start position `(13, 23)` |
-| `food_count` | Number of reachable food tiles |
-| `steps` | Best-found open-walk length (sum of BFS distances) |
-| `score` | `(food_count / steps) × 10`, capped at 10 |
-| `method` | `ms-or3opt` (large mazes) or `held-karp-exact` (≤ 20 nodes) |
-| `mst_lower_bound` | MST weight — guaranteed lower bound on the true optimum |
-| `wrap_tunnels` | Whether left-right tunnels were included in BFS |
+```bash
+# Depuis le cloud Render
+python client.py
+
+# Depuis le serveur local (lancer app.py d'abord)
+python client.py --local
+
+# Avec un seed fixe
+python client.py --seed 42
+
+# Changer la taille des cases
+python client.py --tile-size 16
+```
+
+**Contrôles :**
+- `ESPACE` → nouveau maze
+- `0`–`5` → noter le maze (enregistré en base de données)
+- `Q / Échap` → quitter
+
+Le client affiche les pellets (petits) et les power pellets (grands, aux 4 coins).
+
+---
+
+## Jeu Pac-Man
+
+```bash
+# Labyrinthe aléatoire (API Render)
+python main.py
+
+# Seed fixe
+python main.py --seed 42
+
+# API locale (lancer app.py d'abord)
+python main.py --local
+
+# Seed fixe en local
+python main.py --local --seed 42
+
+# Enregistrer la partie dans recording.json
+python main.py --record
+
+# Jouer sans fantômes
+python main.py --no-ghosts
+
+# Rejouer une partie enregistrée
+python main.py --replay recording.json
+
+# Choisir l'IA des fantômes (défaut : random)
+python main.py --ai random
+```
+
+**Contrôles :**
+- `Flèches / WASD` → déplacer Pac-Man
+- `P` → pause
+- `R` → rejouer (sur l'écran Game Over)
+- `Q / Échap` → quitter
+
+**Enregistrement / replay :**  
+`--record` sauvegarde chaque action dans `recording.json`.  
+`--replay recording.json` rejoue la partie automatiquement avec le même seed.
+
+**Brancher une IA fantôme :**  
+Créer une sous-classe de `Ghost` dans `src/game/`, l'enregistrer dans `_GHOST_REGISTRY` (fichier `ghost.py`), puis passer son nom avec `--ai mon_ia`.
+
+> Sur le plan gratuit Render, le service se met en veille après 15 min
+> d'inactivité. Le premier appel peut prendre 50 secondes.
+
+---
+
+## Génération en ligne de commande (local)
+
+```bash
+# Générer un maze (JSON + PNG + TXT)
+python generate.py
+
+# Avec seed fixe
+python generate.py --seed 42
+
+# Changer la taille des tuiles
+python generate.py -s 30
+
+# JSON uniquement
+python generate.py --json-only
+```
+
+Options complètes :
+- `-o, --output PATH` — dossier de sortie (défaut : `maze_[seed]/`)
+- `--seed SEED` — graine pour la reproductibilité
+- `-s, --size SIZE` — taille des tuiles en pixels (défaut : 20)
+- `--json-only` / `--png-only` / `--text-only`
+- `-v, --verbose`
+
+### Rendu depuis un JSON existant
+
+```bash
+python render_json.py maze_42/maze.json
+python render_json.py maze_42/maze.json -o output.png -s 30
+python render_json.py maze_42/maze.json --show-graph
+```
+
+### Score de complexité
+
+```bash
+python maze_complexity.py maze_42/maze.json
+```
+
+Le score est calculé via un algorithme greedy nearest-neighbor avec optimisation 2-opt.  
+**Formule :** `score = (food_count / steps) × 10` (plafonné à 10)
+
+### Visualisation animée du chemin
+
+```bash
+python maze_complexity_visualize.py maze_42/maze.json
+```
+
+---
+
+## Tests
+
+```bash
+pip install pytest requests
+
+# Tous les tests
+pytest tests/ -v
+
+# Tests fonctionnels uniquement (pas besoin de connexion internet)
+pytest tests/test_api_local.py -v
+
+# Tests des propriétés mathématiques du maze
+pytest tests/test_maze_properties.py -v
+
+# Tests end-to-end sur Render (nécessite connexion internet)
+pytest tests/test_api_cloud.py -v
+```
+
+---
+
+## Exemples curl
+
+Voir `tests/curl_examples.sh` pour la liste complète.
+
+```bash
+curl https://pacman-s2-h.onrender.com/health
+curl https://pacman-s2-h.onrender.com/maze
+curl https://pacman-s2-h.onrender.com/maze?seed=42
+```
+
+---
+
+## CI/CD
+
+Le fichier `.github/workflows/deploy.yml` automatise les déploiements sur Render.
+
+À chaque push sur `main` :
+1. GitHub Actions lance les tests automatiquement (`test_api_local.py` + `test_maze_properties.py`)
+2. Si tous les tests passent → déploiement sur Render déclenché
+3. Si un test échoue → le déploiement est bloqué
 
 ---
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+See LICENSE file for details.
+
+---
+
+*Université Nice Côte d'Azur — M1 Informatique — TER S2*  
+*Encadrant : Pr. Gilles Menez*  
+*Membres : THEOLIEN Bierhoff, Hugo VIANA, JULES Stevenson*
