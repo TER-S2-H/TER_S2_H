@@ -22,6 +22,8 @@ Usage :
 import os
 import sys
 import json
+import glob
+import random
 import argparse
 import dataclasses
 import random
@@ -255,13 +257,15 @@ class JEPAAgent:
             seq.detach(), e_pred_stored.detach(), g_j
         )  # [1] — graphe vivant sur cost_module
 
-        return cost_pred, g_j, e_goal, seq
+        return g_j, e_goal, seq, e_pred_stored
 
-    def store_prediction(self, cost_pred, n_pellets_t, pac_xy_t, ghost_xy_t):
-        """Stocke la prédiction pour backprop futur."""
-        self.buffer_preds.append(
-            (cost_pred, n_pellets_t, pac_xy_t, ghost_xy_t)
-        )
+    def store_prediction(self, seq, e_pred, g_j, n_pellets_t, pac_xy_t, ghost_xy_t):
+        self.buffer_preds.append((
+            seq.detach().clone(),
+            e_pred.detach().clone(),
+            g_j.detach().clone(),
+            n_pellets_t, pac_xy_t, ghost_xy_t,
+        ))
 
     def maybe_backprop(
         self,
@@ -278,7 +282,8 @@ class JEPAAgent:
         if len(self.buffer_preds) < self.config.j:
             return None
 
-        cost_pred, n_pellets_t, pac_xy_t, ghost_xy_t = self.buffer_preds.popleft()
+        seq, e_pred, g_j, n_pellets_t, pac_xy_t, ghost_xy_t = self.buffer_preds.popleft()
+        cost_pred = self.cost_module(seq, e_pred, g_j)
 
         # Coût réel
         if self.is_pacman:
@@ -298,9 +303,9 @@ class JEPAAgent:
             dist_tj = abs(gx_n - px_n) + abs(gy_n - py_n)
             real_cost = float(2 * dist_tj - dist_t)
 
-        target = torch.tensor([real_cost], dtype=torch.float32,
-                               device=self.device)
-        loss   = F.mse_loss(cost_pred, target)
+        real_cost = (real_cost - 27.66) / 37.58
+        target = torch.tensor([real_cost], dtype=torch.float32, device=self.device)
+        loss = F.huber_loss(cost_pred, target, delta=1.0)
 
         optimizer.zero_grad()
         loss.backward()
@@ -323,9 +328,8 @@ class JEPAAgent:
         """
         offset = 0
         while self.buffer_preds:
-            cost_pred, n_pellets_t, pac_xy_t, ghost_xy_t = (
-                self.buffer_preds.popleft()
-            )
+            seq, e_pred, g_j, n_pellets_t, pac_xy_t, ghost_xy_t = self.buffer_preds.popleft()
+            cost_pred = self.cost_module(seq, e_pred, g_j)
             # Prendre le snapshot le plus proche disponible dans l'historique
             snap_idx = min(offset + self.config.j, len(history) - 1)
             n_pellets_now, pac_xy_now, ghost_xy_now = history[snap_idx]
@@ -344,9 +348,9 @@ class JEPAAgent:
                 dist_tj = abs(gx_n - px_n) + abs(gy_n - py_n)
                 real_cost = float(2 * dist_tj - dist_t)
 
-            target = torch.tensor([real_cost], dtype=torch.float32,
-                                   device=self.device)
-            loss = F.mse_loss(cost_pred, target)
+            real_cost = (real_cost - 27.66) / 37.58
+            target = torch.tensor([real_cost], dtype=torch.float32, device=self.device)
+            loss = F.huber_loss(cost_pred, target, delta=1.0)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -359,7 +363,7 @@ class JEPAAgent:
 # ── Boucle RL principale ──────────────────────────────────────────────────────
 
 def run_rl(
-    maze_json:    str,
+    maze_dir: str,
     jepa_weights: str,
     jepa_config:  str,
     n_episodes:   int = 200,
@@ -391,8 +395,19 @@ def run_rl(
         p.requires_grad = False
 
     # ── Charger les modules de coût (ou initialiser) ──────────────────────────
-    cost_pacman = CostModule(config.d_model).to(device)
-    cost_ghost  = CostModule(config.d_model).to(device)
+    cost_config_path = os.path.join(OUTPUT_DIR, "best_params_cost_modules.json")
+    if os.path.exists(cost_config_path):
+        with open(cost_config_path) as f:
+            cost_params = json.load(f)
+        cost_n_heads  = cost_params.get("n_heads",  2)
+        cost_n_layers = cost_params.get("n_layers", 2)
+        print(f"Architecture cost modules : n_heads={cost_n_heads}, n_layers={cost_n_layers}")
+    else:
+        cost_n_heads, cost_n_layers = 2, 2
+        print("⚠ best_params_cost_modules.json introuvable — architecture par défaut")
+
+    cost_pacman = CostModule(config.d_model, cost_n_heads, cost_n_layers).to(device)
+    cost_ghost  = CostModule(config.d_model, cost_n_heads, cost_n_layers).to(device)
 
     pac_weights_path   = os.path.join(OUTPUT_DIR, "cost_pacman.pt")
     ghost_weights_path = os.path.join(OUTPUT_DIR, "cost_ghost.pt")
@@ -413,28 +428,10 @@ def run_rl(
     )
 
     # ── Préparer le jeu ───────────────────────────────────────────────────────
-    maze_data = load_maze(maze_json)
-    meta      = maze_data.get("metadata", {})
-    width     = meta.get("width", 28)
-    height    = meta.get("height", 31)
-
-    coo_src, coo_dst, node_to_index, index_to_coord, adjacency = build_graph(
-        maze_data["nodes"], maze_data["edges"], width, height
-    )
-    energizers_full = symmetrize_energizers(
-        maze_data["energizers"], node_to_index, height
-    )
-    pacman_spawn, ghost_spawns = extract_walkable_and_spawns(
-        maze_data["nodes"], node_to_index, maze_data.get("ghost_walls", set())
-    )
-
-    graph = dict(
-        coo_src=coo_src, coo_dst=coo_dst,
-        node_to_index=node_to_index, index_to_coord=index_to_coord,
-        adjacency=adjacency, ghost_wall_nodes=set(),
-        num_nodes=len(node_to_index),
-    )
-    spawns = dict(pacman_spawn=pacman_spawn, ghost_spawns=ghost_spawns)
+    maze_files = sorted(glob.glob(os.path.join(maze_dir, "**", "maze.json"), recursive=True))
+    if not maze_files:
+        raise FileNotFoundError(f"Aucun maze.json trouvé dans {maze_dir}")
+    print(f"{len(maze_files)} labyrinthes disponibles")
 
     # ── Initialiser les agents ────────────────────────────────────────────────
     agents = [
@@ -447,23 +444,39 @@ def run_rl(
 
     # ── Boucle sur les épisodes ───────────────────────────────────────────────
     for ep in range(n_episodes):
+        maze_json = random.choice(maze_files)
+        maze_data = load_maze(maze_json)
+        meta      = maze_data.get("metadata", {})
+        width     = meta.get("width", 28)
+        height    = meta.get("height", 31)
+
+        coo_src, coo_dst, node_to_index, index_to_coord, adjacency = build_graph(
+            maze_data["nodes"], maze_data["edges"], width, height
+        )
+        energizers_full = symmetrize_energizers(
+            maze_data["energizers"], node_to_index, height
+        )
+        pacman_spawn, ghost_spawns = extract_walkable_and_spawns(
+            maze_data["nodes"], node_to_index, maze_data.get("ghost_walls", set())
+        )
+
         state = GameState(
             adjacency=adjacency,
             node_to_index=node_to_index,
             index_to_coord=index_to_coord,
             ghost_wall_nodes=set(),
-            pacman_spawn=spawns["pacman_spawn"],
-            ghost_spawns=spawns["ghost_spawns"],
+            pacman_spawn=pacman_spawn,
+            ghost_spawns=ghost_spawns,
             initial_pellets=set(node_to_index[tuple(p)]
                                 for p in maze_data.get("pellets", set())
                                 if tuple(p) in node_to_index),
             initial_energizers=set(node_to_index[e]
-                                   for e in energizers_full
-                                   if e in node_to_index),
+                                for e in energizers_full
+                                if e in node_to_index),
         )
 
         coord_adj = build_coord_adj(state)
-        for agent in agents:
+        for agent in agents:       # ← à partir d'ici rien ne change
             agent.reset()
 
         # Historique pour flush en fin d'épisode
@@ -515,9 +528,9 @@ def run_rl(
                 agent.observe(cases, pos, mask, prev_action)
 
                 # Choisir action + stocker prédiction
-                cost_pred, g_j, e_goal, seq = agent.choose_action()
+                g_j, e_goal, seq, e_pred = agent.choose_action()
                 agent.store_prediction(
-                    cost_pred, n_pellets_now, pac_coord, list(ghost_coords)
+                    seq, e_pred, g_j, n_pellets_now, pac_coord, list(ghost_coords)
                 )
 
                 # Action niveau 1
@@ -590,7 +603,7 @@ def run_rl(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--maze-json",    required=True)
+    parser.add_argument("--maze-dir", default="generated_mazes")
     parser.add_argument("--jepa-weights", required=True)
     parser.add_argument("--jepa-config",  required=True)
     parser.add_argument("--n-episodes",   type=int,   default=200)

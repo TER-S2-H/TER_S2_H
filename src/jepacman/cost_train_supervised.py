@@ -36,12 +36,12 @@ from .lightning.cost_module_pl import CostModuleModule
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 
-N_TRIALS       = 5
+N_TRIALS       = 7
 MAX_EPOCHS_TRIALS = 15
-MAX_EPOCHS     = 30
+MAX_EPOCHS     = 50
 EARLY_STOPPING = 7
 VAL_SPLIT      = 0.1
-OUTPUT_DIR     = "optuna_results_cost"
+OUTPUT_DIR     = "optuna_results"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

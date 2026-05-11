@@ -76,7 +76,7 @@ class CostModuleModule(pl.LightningModule):
             c_pred = self.cost_pacman(
                 seq[pac_mask], e_pred[pac_mask], g_j[pac_mask]
             )
-            loss_pac = F.mse_loss(c_pred, cost_real[pac_mask])
+            loss_pac = F.huber_loss(c_pred, cost_real[pac_mask],   delta=1.0)
             self.log("pac_loss", loss_pac, prog_bar=True,
                      on_step=False, on_epoch=True)
             loss = loss + loss_pac
@@ -85,7 +85,7 @@ class CostModuleModule(pl.LightningModule):
             c_pred = self.cost_ghost(
                 seq[ghost_mask], e_pred[ghost_mask], g_j[ghost_mask]
             )
-            loss_ghost = F.mse_loss(c_pred, cost_real[ghost_mask])
+            loss_ghost = F.huber_loss(c_pred, cost_real[ghost_mask], delta=1.0)
             self.log("ghost_loss", loss_ghost, prog_bar=True,
                      on_step=False, on_epoch=True)
             loss = loss + loss_ghost

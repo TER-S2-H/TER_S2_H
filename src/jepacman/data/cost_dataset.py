@@ -89,19 +89,20 @@ class CostDataset(Dataset):
         tj     = min(t + self.j, n_meta - 1)
 
         if agent_id == 0:
-            # Pac-Man : mort entre t et t+j ?
             died = bool(meta["outcome_eaten"]) and (t + self.j >= n_meta - 1)
             if died:
-                return float(self.j * 10)
-            pellets_eaten = int(meta["n_pellets"][t]) - int(meta["n_pellets"][tj])
-            return float(self.j - pellets_eaten)
+                raw = float(self.j * 10)
+            else:
+                pellets_eaten = int(meta["n_pellets"][t]) - int(meta["n_pellets"][tj])
+                raw = float(self.j - pellets_eaten)
+            return (raw - 27.66) / 37.58   # ← normalisation z-score
 
         else:
             ghost_idx = agent_id - 1
             dist_t  = int(meta["ghost_dist_to_pacman"][t,  ghost_idx])
             dist_tj = int(meta["ghost_dist_to_pacman"][tj, ghost_idx])
-
-            return float((2 * dist_tj) - dist_t)
+            raw = float((2 * dist_tj) - dist_t)
+            return (raw - 27.66) / 37.58   # ← même normalisation
 
     # ── __getitem__ ───────────────────────────────────────────────────────────
 

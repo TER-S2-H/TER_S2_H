@@ -33,3 +33,4 @@ jepa_sessions/
 sessions/
 lightning_logs/
 jepa_numpy/
+jepa_meta/
