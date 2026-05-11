@@ -38,7 +38,14 @@ import torch.nn.functional as F
 from .config import Config
 from .models.jepa import HierarchicalJEPAcman
 from .models.cost_module import CostModule
+import json
+try:
+    import pygame
+    PYGAME_AVAILABLE = True
+except ImportError:
+    PYGAME_AVAILABLE = False
 
+from ..visualize_session import draw_frame, draw_static_maze
 # Fonctions de visibilité/observation réutilisées depuis convert_sess_to_jepa
 from .convert_sess_to_jepa import (
     compute_visible_coords,
@@ -172,6 +179,7 @@ class JEPAAgent:
         self.cost_module = cost_module
         self.config      = config
         self.device      = device
+        self.last_action = None
 
         # Contexte glissant : derniers seq_len observations
         # Chaque entrée : (cases [81,8], pos [81,2], mask [81], action int)
@@ -188,6 +196,7 @@ class JEPAAgent:
     def reset(self):
         self.context.clear()
         self.buffer_preds.clear()
+        self.last_action = None
 
     def observe(self, cases: np.ndarray, pos: np.ndarray,
                 mask: np.ndarray, action: int):
@@ -363,12 +372,15 @@ class JEPAAgent:
 # ── Boucle RL principale ──────────────────────────────────────────────────────
 
 def run_rl(
-    maze_dir: str,
-    jepa_weights: str,
-    jepa_config:  str,
-    n_episodes:   int = 200,
-    lr:           float = LR_DEFAULT,
-    save_every:   int = 50,
+    maze_dir:      str,
+    jepa_weights:  str,
+    jepa_config:   str,
+    n_episodes:    int   = 200,
+    lr:            float = LR_DEFAULT,
+    save_every:    int   = 50,
+    render:        bool  = False,
+    render_every:  int   = 10,
+    render_fps:    int   = 12,
 ):
     device = get_device()
     print(f"Dispositif : {device}")
@@ -442,6 +454,17 @@ def run_rl(
         JEPAAgent(4, jepa, cost_ghost,  config, device),   # Ghost 3
     ]
 
+    screen, clock, tile_size = None, None, 22
+    if render:
+        if not PYGAME_AVAILABLE:
+            print("⚠ pygame non disponible — rendu désactivé")
+            render = False
+        else:
+            pygame.init()
+            tile_size = 22
+            clock = pygame.time.Clock()
+            pygame.display.set_caption("JEPAcman RL")
+
     # ── Boucle sur les épisodes ───────────────────────────────────────────────
     for ep in range(n_episodes):
         maze_json = random.choice(maze_files)
@@ -449,6 +472,15 @@ def run_rl(
         meta      = maze_data.get("metadata", {})
         width     = meta.get("width", 28)
         height    = meta.get("height", 31)
+
+        do_render = render and (ep % render_every == 0)
+        if do_render:
+            with open(maze_json) as f:
+                maze_json_data = json.load(f)
+            screen = pygame.display.set_mode(
+                (width * tile_size, height * tile_size + 40)
+            )
+            font = pygame.font.SysFont(None, 22)
 
         coo_src, coo_dst, node_to_index, index_to_coord, adjacency = build_graph(
             maze_data["nodes"], maze_data["edges"], width, height
@@ -544,7 +576,10 @@ def run_rl(
                     except Exception:
                         e_subgoal = e_goal
 
-                    action_idx = jepa.choose_action(seq, e_subgoal)
+                    REVERSE = {0: 1, 1: 0, 2: 3, 3: 2}
+                    forbidden = {REVERSE[agent.last_action]} if agent.last_action is not None else None
+                    action_idx = jepa.choose_action(seq, e_subgoal, forbidden=forbidden)
+                    agent.last_action = action_idx
 
                 if agent.is_pacman:
                     actions_chosen["pacman"] = action_idx
@@ -558,8 +593,38 @@ def run_rl(
                     outcome_eaten=False, optimizer=optimizer,
                 )
 
-            # ── Pas de simulation ──────────────────────────────────────────
-            done, outcome = sim_step(state, is_first_step=(step == 0))
+            done, outcome = sim_step(
+                state,
+                is_first_step = (step == 0),
+                pacman_action = actions_chosen.get("pacman"),
+                ghost_actions = [actions_chosen.get(f"ghost_{i}") for i in range(4)],
+            )
+
+            if do_render and state.frames:
+                # Gestion quitter
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        return
+
+                frame = state.frames[-1]
+                maze_surf = screen.subsurface(
+                    pygame.Rect(0, 40, width * tile_size, height * tile_size)
+                )
+                draw_frame(maze_surf, frame, maze_json_data, tile_size)
+
+                # HUD
+                pygame.draw.rect(screen, (12, 12, 12),
+                                 pygame.Rect(0, 0, width * tile_size, 40))
+                hud = font.render(
+                    f"Ep {ep+1}/{n_episodes} | step {step} | "
+                    f"loss_pac={agents[0].total_loss/max(agents[0].n_updates,1):.3f}",
+                    True, (255, 255, 255)
+                )
+                screen.blit(hud, (8, 12))
+                pygame.display.flip()
+                clock.tick(render_fps)
+
             if outcome == "eaten":
                 outcome_eaten = True
             step += 1
@@ -609,6 +674,9 @@ if __name__ == "__main__":
     parser.add_argument("--n-episodes",   type=int,   default=200)
     parser.add_argument("--lr",           type=float, default=LR_DEFAULT)
     parser.add_argument("--save-every",   type=int,   default=50)
+    parser.add_argument("--render",        action="store_true")
+    parser.add_argument("--render-every",  type=int,   default=10)
+    parser.add_argument("--render-fps",    type=int,   default=12)
     args = parser.parse_args()
 
     run_rl(
@@ -618,4 +686,7 @@ if __name__ == "__main__":
         n_episodes=args.n_episodes,
         lr=args.lr,
         save_every=args.save_every,
+        render=args.render,
+        render_every=args.render_every,
+        render_fps=args.render_fps
     )
