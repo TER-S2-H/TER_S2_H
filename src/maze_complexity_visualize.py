@@ -10,7 +10,7 @@ from typing import List, Tuple
 
 from PIL import Image, ImageDraw
 
-from .maze_complexity import compute_greedy_path
+from .maze_complexity import compute_path_for_visualization
 from .render_json import JSONMazeRenderer
 
 Position = Tuple[int, int]
@@ -60,17 +60,16 @@ def main() -> int:
     with open(args.maze_json, "r") as f:
         maze_data = json.load(f)
 
-    steps, path, debug = compute_greedy_path(
+    steps, path, debug = compute_path_for_visualization(
         maze_data,
         start=(13, 23),
         wrap_tunnels=wrap_tunnels,
     )
 
     if args.verbose:
-        print("Path steps: %s" % steps)
-        print("Food count: %s" % debug.get("food_count"))
-        print("Swap iterations: %s" % debug.get("swap_iterations"))
-        print("Improvements applied: %s" % debug.get("improvements_applied"))
+        print("Steps         : %s  (method: %s)" % (debug.get("steps"), debug.get("method")))
+        print("MST lower bound: %s" % debug.get("mst_lower_bound"))
+        print("Food count    : %s" % debug.get("food_count"))
 
     renderer = JSONMazeRenderer(tile_size=args.size)
     base_image = renderer.render_to_image(maze_data, show_graph=False)

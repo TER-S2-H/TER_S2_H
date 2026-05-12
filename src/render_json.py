@@ -175,11 +175,10 @@ def main():
     maze_data = renderer.load_json(args.json_file)
     
     if args.verbose:
-        print(f"Maze size: {maze_data['metadata']['width']}x{maze_data['metadata']['height']}")
-        print(f"Nodes: {maze_data['metadata']['node_count']}")
-        print(f"Edges: {maze_data['metadata']['edge_count']}")
-        print(f"Walls: {maze_data['metadata']['wall_count']}")
-        print(f"Ghost walls: {maze_data['metadata']['ghost_wall_count']}")
+        meta = maze_data['metadata']
+        print(f"Maze size: {meta['width']}x{meta['height']}")
+        print(f"Nodes: {meta['node_count']}")
+        print(f"Edges: {meta['edge_count']}")
         print(f"Rendering to: {output_file}")
     
     renderer.render_to_file(maze_data, output_file, show_graph=args.show_graph)

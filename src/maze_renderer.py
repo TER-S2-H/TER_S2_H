@@ -63,10 +63,10 @@ class MazeRenderer:
         # Draw each tile
         for i in range(len(tile_map)):
             for j in range(len(tile_map[0])):
-                self._draw_tile(draw, tile_map[i][j], 
-                              i * self.tile_size, 
-                              j * self.tile_size)
-        
+                self._draw_tile(draw, tile_map[i][j],
+                                i * self.tile_size,
+                                j * self.tile_size)
+
         return image
     
     def _draw_tile(self, draw: ImageDraw.ImageDraw, tile, x: int, y: int):
